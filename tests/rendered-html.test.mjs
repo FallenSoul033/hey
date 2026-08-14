@@ -8,21 +8,32 @@ async function render() {
   const { default: worker } = await import(workerUrl.href);
   return worker.fetch(
     new Request("http://localhost/", { headers: { accept: "text/html" } }),
-    { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
+    {
+      ASSETS: {
+        fetch: async (request) =>
+          new URL(request.url).pathname === "/app-shell.html"
+            ? new Response("IceFresh application shell", {
+                headers: { "Content-Type": "text/html; charset=utf-8" },
+              })
+            : new Response("Not found", { status: 404 }),
+      },
+    },
     { waitUntil() {}, passThroughOnException() {} },
   );
 }
 
-test("redirects the root route to the IceFresh PWA", async () => {
+test("serves the IceFresh PWA shell through the security worker", async () => {
   const response = await render();
-  assert.ok([307, 308].includes(response.status));
-  assert.equal(new URL(response.headers.get("location"), "http://localhost").pathname, "/index.html");
+  assert.equal(response.status, 200);
+  assert.equal(await response.text(), "IceFresh application shell");
+  assert.equal(response.headers.get("x-frame-options"), "DENY");
+  assert.match(response.headers.get("content-security-policy"), /frame-ancestors 'none'/);
 });
 
 test("ships the configured Russian IceFresh application", async () => {
   const root = new URL("../public/", import.meta.url);
   const [html, config, manifest, headers] = await Promise.all([
-    readFile(new URL("index.html", root), "utf8"),
+    readFile(new URL("app-shell.html", root), "utf8"),
     readFile(new URL("config.js", root), "utf8"),
     readFile(new URL("manifest.webmanifest", root), "utf8"),
     readFile(new URL("_headers", root), "utf8"),

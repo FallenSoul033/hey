@@ -44,6 +44,14 @@ const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
+    if (url.pathname === "/" || url.pathname === "/index.html") {
+      const shellRequest = new Request(new URL("/app-shell.html", request.url), {
+        method: "GET",
+        headers: request.headers,
+      });
+      return secure(await env.ASSETS.fetch(shellRequest), true);
+    }
+
     if (url.pathname === "/_vinext/image") {
       const allowedWidths = [...DEFAULT_DEVICE_SIZES, ...DEFAULT_IMAGE_SIZES];
       return secure(await handleImageOptimization(request, {
