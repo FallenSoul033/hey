@@ -35,3 +35,10 @@ test("ships the configured Russian IceFresh application", async () => {
   assert.match(headers, /Content-Security-Policy:/);
   assert.match(headers, /frame-ancestors 'none'/);
 });
+
+test("routes static assets through the security-header worker", async () => {
+  const config = JSON.parse(
+    await readFile(new URL("../dist/server/wrangler.json", import.meta.url), "utf8"),
+  );
+  assert.equal(config.assets?.run_worker_first, true);
+});
