@@ -21,14 +21,17 @@ test("redirects the root route to the IceFresh PWA", async () => {
 
 test("ships the configured Russian IceFresh application", async () => {
   const root = new URL("../public/", import.meta.url);
-  const [html, config, manifest] = await Promise.all([
+  const [html, config, manifest, headers] = await Promise.all([
     readFile(new URL("index.html", root), "utf8"),
     readFile(new URL("config.js", root), "utf8"),
     readFile(new URL("manifest.webmanifest", root), "utf8"),
+    readFile(new URL("_headers", root), "utf8"),
   ]);
   assert.match(html, /Добро пожаловать в IceFresh/);
   assert.match(html, /Данные защищены и синхронизируются/);
   assert.match(config, /https:\/\/ogjfqnbgauuhbmauioea\.supabase\.co/);
   assert.doesNotMatch(config, /sb_secret_|service_role\s*:/i);
   assert.equal(JSON.parse(manifest).short_name, "IceFresh");
+  assert.match(headers, /Content-Security-Policy:/);
+  assert.match(headers, /frame-ancestors 'none'/);
 });
