@@ -3,6 +3,11 @@ const C = IceCore;
 const R = IceRoutes;
 const SDK_VERSION = '2.111.0';
 const PRODUCT_IMAGE_BUCKET = 'product-images';
+const BUILT_IN_PRODUCT_PHOTOS = {
+  cup250: 'assets/products/cup-250.webp',
+  bag1: 'assets/products/bag-1kg.webp',
+  bag2: 'assets/products/bag-2kg.webp'
+};
 const PRODUCT_IMAGE_TYPES = new Map([
   ['image/jpeg', 'jpg'],
   ['image/png', 'png'],
@@ -107,6 +112,9 @@ const friendlyError = error => {
   if (/invite is invalid/i.test(message)) return 'Код приглашения неверен или истёк.';
   if (/owner access required/i.test(message)) return 'Это действие доступно только владельцу.';
   if (/member not found/i.test(message)) return 'Сотрудник не найден.';
+  if (/website request already processed/i.test(message)) return 'Эта заявка уже обработана.';
+  if (/website request not found/i.test(message)) return 'Заявка не найдена или недоступна.';
+  if (/active product not found/i.test(message)) return 'Товар отключён или больше недоступен.';
   if (/duplicate key|unique constraint/i.test(message)) return 'Такая запись уже существует.';
   if (/row-level security|permission denied/i.test(message)) return 'У вас нет прав для этого действия.';
   return message || 'Не удалось выполнить действие.';
@@ -119,6 +127,7 @@ function normalizeProduct(product) {
     description: product.description || '',
     weight: product.weight_label || product.weight || '',
     price: Number(product.default_price ?? product.price ?? 0),
+    minStock: Number(product.min_stock ?? product.minStock ?? 0),
     unit: product.unit || 'шт.',
     photoPath: product.photo_path || null,
     active: product.active !== false,
@@ -143,8 +152,19 @@ function prod(productId) {
 }
 
 function productPhotoUrl(product) {
-  if (!product?.photoPath || !supabase) return '';
-  return supabase.storage.from(PRODUCT_IMAGE_BUCKET).getPublicUrl(product.photoPath).data.publicUrl || '';
+  const builtIn = BUILT_IN_PRODUCT_PHOTOS[product?.id] || '';
+  if (!product?.photoPath) return builtIn;
+  if (/^(?:https?:)?\/\//i.test(product.photoPath) || product.photoPath.startsWith('/') || product.photoPath.startsWith('assets/')) return product.photoPath;
+  if (!supabase) return builtIn;
+  return supabase.storage.from(PRODUCT_IMAGE_BUCKET).getPublicUrl(product.photoPath).data.publicUrl || builtIn;
+}
+
+function updatePublicEntry() {
+  const ready = Boolean(session && profile?.active && profile.organization_id && profile.role !== 'pending');
+  document.querySelectorAll('.staff-login').forEach(link => {
+    link.textContent = ready ? 'Рабочая панель' : 'Вход для сотрудников';
+    link.href = ready ? '#/dashboard' : '#/login';
+  });
 }
 
 function showOnly(target) {
@@ -205,6 +225,7 @@ function access() {
 
 function applyRoute() {
   captureInviteToken();
+  updatePublicEntry();
   const requested = route();
   const decision = R.resolve(requested, access());
   if (decision.route !== requested) replaceRoute(decision.route);
@@ -316,9 +337,9 @@ function renderPublicCatalogue() {
   grid.innerHTML = products.map((product, index) => {
     const photo = productPhotoUrl(product);
     const visual = photo
-      ? `<img class="public-product-photo" src="${C.esc(photo)}" alt="${C.esc(product.name)}" loading="lazy">`
+      ? `<img class="public-product-photo ${product.id === 'cup250' ? 'product-photo--cup250' : ''}" src="${C.esc(photo)}" alt="${C.esc(product.name)}" loading="lazy">`
       : `<div class="product-art ice-product-art"><span>❄</span><strong>${C.esc(product.weight || 'IceFresh')}</strong></div>`;
-    return `<article class="catalog-card ${index === 0 ? 'featured' : ''}"><span class="catalog-label">${index === 0 ? 'Популярный выбор' : 'IceFresh'}</span>${visual}<h3>${C.esc(product.name)}</h3><b>${C.esc(product.weight || product.unit)}</b><p>${C.esc(product.description || 'Чистый лёд IceFresh в удобной упаковке.')}</p><button type="button" data-product="${C.esc(product.id)}">Выбрать</button></article>`;
+    return `<article class="catalog-card ${index === 0 ? 'featured' : ''}"><span class="catalog-label">${index === 0 ? 'Популярный выбор' : 'IceFresh'}</span>${visual}<h3>${C.esc(product.name)}</h3><div class="catalog-price"><b>${C.esc(product.weight || product.unit)}</b><strong>${C.money(product.price)}</strong></div><p>${C.esc(product.description || 'Чистый лёд IceFresh в удобной упаковке.')}</p><button type="button" data-product="${C.esc(product.id)}">Выбрать</button></article>`;
   }).join('');
   const previous = select.value;
   select.innerHTML = products.map(product => `<option value="${C.esc(product.id)}">${C.esc(product.name)}</option>`).join('');
@@ -483,18 +504,31 @@ function scheduleCompact(item) {
   return `<button class="schedule-compact type-${item.type}" data-edit-schedule="${item.id}"><span>${typeIcons[item.type] || '•'}</span><span><b>${C.esc(item.title)}</b><small>${dateTime(item.scheduledAt)}${item.client ? ` · ${C.esc(item.client)}` : ''}</small></span>${badge(item.status)}</button>`;
 }
 
+function stockLevel(item) {
+  if (item.stock < 0) return 'negative';
+  if (item.minStock > 0 && item.stock <= item.minStock) return 'low';
+  return 'ok';
+}
+
+function stockNotice(item) {
+  const level = stockLevel(item);
+  if (level === 'negative') return 'Остаток отрицательный: проверьте производство и отгрузки.';
+  if (level === 'low') return `Достигнут минимальный остаток: ${item.minStock} ${item.unit}`;
+  return '';
+}
+
 function dashboardView() {
   const inventory = C.inventory(data.production, data.orders, catalogue());
   const newRequests = data.requests.filter(request => request.status === 'Новая').length;
   const requestAlert = newRequests ? `<button class="request-alert" data-go="requests"><span><b>${newRequests} ${newRequests === 1 ? 'новая заявка' : 'новых заявок'} с сайта</b><span>Посетители IceFresh ожидают обратной связи.</span></span><strong>Открыть →</strong></button>` : '';
   const upcoming = openScheduleItems().slice(0, 5);
-  return `${requestAlert}${cards()}<div class="grid2"><article class="panel"><div class="panel-head"><div><p class="eyebrow">Актуальные данные</p><h2>Последние заказы</h2></div><button class="link" data-go="orders">Все заказы →</button></div>${table(['Клиент', 'Товар', 'Сумма', 'Статус'], data.orders.slice(0, 5).map(order => `<tr><td><b>${C.esc(order.client)}</b></td><td>${C.esc(prod(order.product))} × ${order.qty}</td><td>${C.money(C.calcOrder(order).total)}</td><td>${badge(order.status)}</td></tr>`).join(''))}</article><article class="panel"><div class="panel-head"><div><p class="eyebrow">План</p><h2>Ближайшие отгрузки и обязательства</h2></div><button class="link" data-go="calendar">Календарь →</button></div><div class="upcoming-list">${upcoming.map(item => scheduleCompact(item)).join('') || empty('Ближайших событий нет')}</div></article></div><article class="panel dashboard-stock"><div class="panel-head"><div><p class="eyebrow">Остатки</p><h2>Склад готовой продукции</h2></div><button class="link" data-go="warehouse">Подробнее →</button></div><div class="stocks">${inventory.map(item => `<div><span>${C.esc(item.name)}<small>${item.made} произведено · ${item.sold} отгружено</small></span><b class="${item.stock < 0 ? 'danger' : ''}">${item.stock} ${C.esc(item.unit)}</b></div>`).join('')}</div></article>`;
+  return `${requestAlert}${cards()}<div class="grid2"><article class="panel"><div class="panel-head"><div><p class="eyebrow">Актуальные данные</p><h2>Последние заказы</h2></div><button class="link" data-go="orders">Все заказы →</button></div>${table(['Клиент', 'Товар', 'Сумма', 'Статус'], data.orders.slice(0, 5).map(order => `<tr><td><b>${C.esc(order.client)}</b></td><td>${C.esc(prod(order.product))} × ${order.qty}</td><td>${C.money(C.calcOrder(order).total)}</td><td>${badge(order.status)}</td></tr>`).join(''))}</article><article class="panel"><div class="panel-head"><div><p class="eyebrow">План</p><h2>Ближайшие отгрузки и обязательства</h2></div><button class="link" data-go="calendar">Календарь →</button></div><div class="upcoming-list">${upcoming.map(item => scheduleCompact(item)).join('') || empty('Ближайших событий нет')}</div></article></div><article class="panel dashboard-stock"><div class="panel-head"><div><p class="eyebrow">Остатки</p><h2>Склад готовой продукции</h2></div><button class="link" data-go="warehouse">Подробнее →</button></div><div class="stocks">${inventory.map(item => `<div class="stock-row stock-${stockLevel(item)}"><span>${C.esc(item.name)}<small>${item.made} произведено · ${item.sold} отгружено${stockNotice(item) ? ` · ${C.esc(stockNotice(item))}` : ''}</small></span><b class="${stockLevel(item) !== 'ok' ? 'danger' : ''}">${item.stock} ${C.esc(item.unit)}</b></div>`).join('')}</div></article>`;
 }
 
 function requestsView() {
   const fresh = data.requests.filter(request => request.status === 'Новая').length;
   const active = data.requests.filter(request => ['Новая', 'Связались', 'Принята'].includes(request.status)).length;
-  return `<div class="metrics mini"><article><i>Новые</i><b>${fresh}</b><small>Нужно связаться</small></article><article><i>В работе</i><b>${active}</b><small>Открытые заявки</small></article><article><i>Всего</i><b>${data.requests.length}</b><small>За всё время</small></article></div><article class="panel">${table(['Дата', 'Клиент', 'Телефон', 'Тип', 'Продукция', 'Кол-во', 'Комментарий', 'Статус', 'Действия'], data.requests.map(request => `<tr><td>${dateTime(request.date)}</td><td><b>${C.esc(request.name)}</b></td><td>${C.esc(request.phone)}</td><td>${request.type === 'business' ? 'Бизнес' : 'Частный'}</td><td>${C.esc(prod(request.product))}</td><td>${request.qty}</td><td>${C.esc(request.message || '—')}</td><td>${requestBadge(request.status)}</td><td><div class="request-actions">${request.status === 'Новая' ? `<button data-request-id="${request.id}" data-request-status="Связались">Связались</button>` : ''}${request.status !== 'Принята' && request.status !== 'Закрыта' ? `<button data-request-id="${request.id}" data-request-status="Принята">Принять</button>` : ''}${request.status !== 'Закрыта' ? `<button data-request-id="${request.id}" data-request-status="Закрыта">Закрыть</button>` : `<button data-request-id="${request.id}" data-request-status="Новая">Вернуть</button>`}</div></td></tr>`).join(''))}</article><p class="note">Заявка с сайта не меняет склад и финансовые показатели. После подтверждения создайте обычный заказ.</p>`;
+  return `<div class="metrics mini"><article><i>Новые</i><b>${fresh}</b><small>Нужно связаться</small></article><article><i>В работе</i><b>${active}</b><small>Открытые заявки</small></article><article><i>Всего</i><b>${data.requests.length}</b><small>За всё время</small></article></div><article class="panel">${table(['Дата', 'Клиент', 'Телефон', 'Тип', 'Продукция', 'Кол-во', 'Комментарий', 'Статус', 'Действия'], data.requests.map(request => `<tr><td>${dateTime(request.date)}</td><td><b>${C.esc(request.name)}</b></td><td>${C.esc(request.phone)}</td><td>${request.type === 'business' ? 'Бизнес' : 'Частный'}</td><td>${C.esc(prod(request.product))}</td><td>${request.qty}</td><td>${C.esc(request.message || '—')}</td><td>${requestBadge(request.status)}</td><td><div class="request-actions">${request.status === 'Новая' ? `<button data-request-id="${request.id}" data-request-status="Связались">Связались</button>` : ''}${request.status !== 'Принята' && request.status !== 'Закрыта' ? `<button class="request-accept" data-accept-request="${request.id}">Принять и создать заказ</button>` : ''}${request.status !== 'Закрыта' ? `<button data-request-id="${request.id}" data-request-status="Закрыта">Закрыть</button>` : `<button data-request-id="${request.id}" data-request-status="Новая">Вернуть</button>`}</div></td></tr>`).join(''))}</article><p class="note">Кнопка «Принять и создать заказ» создаёт или находит клиента, добавляет новый заказ по текущей цене и только затем меняет статус заявки.</p>`;
 }
 
 function ordersView() {
@@ -523,7 +557,7 @@ function productsView() {
   const publicCount = products.filter(product => product.active && product.publicVisible).length;
   return `<div class="admin-intro"><div><span class="admin-icon">◇</span><div><h2>Каталог IceFresh</h2><p>Добавляйте товары, цены и фотографии. Отметка «Показывать клиентам» автоматически выводит товар на главную страницу.</p></div></div><div class="admin-stats"><span><b>${activeCount}</b> активных</span><span><b>${publicCount}</b> на сайте</span></div></div><div class="admin-product-grid">${products.map(product => {
     const photo = productPhotoUrl(product);
-    return `<article class="admin-product-card ${product.active ? '' : 'is-inactive'}">${photo ? `<img src="${C.esc(photo)}" alt="${C.esc(product.name)}">` : `<div class="admin-product-placeholder">❄<small>${C.esc(product.weight || 'IceFresh')}</small></div>`}<div class="admin-product-body"><div class="card-statuses"><span class="status-pill ${product.active ? 'on' : 'off'}">${product.active ? 'Активен' : 'Отключён'}</span><span class="status-pill ${product.publicVisible ? 'public' : ''}">${product.publicVisible ? 'На сайте' : 'Только в CRM'}</span></div><h3>${C.esc(product.name)}</h3><p>${C.esc(product.description || 'Описание не добавлено')}</p><dl><div><dt>Формат</dt><dd>${C.esc(product.weight || '—')}</dd></div><div><dt>Цена по умолчанию</dt><dd>${C.money(product.price)}</dd></div><div><dt>Единица</dt><dd>${C.esc(product.unit)}</dd></div></dl><button class="ghost card-edit" data-edit-product="${product.id}">Изменить товар</button></div></article>`;
+    return `<article class="admin-product-card ${product.active ? '' : 'is-inactive'}">${photo ? `<img src="${C.esc(photo)}" alt="${C.esc(product.name)}">` : `<div class="admin-product-placeholder">❄<small>${C.esc(product.weight || 'IceFresh')}</small></div>`}<div class="admin-product-body"><div class="card-statuses"><span class="status-pill ${product.active ? 'on' : 'off'}">${product.active ? 'Активен' : 'Отключён'}</span><span class="status-pill ${product.publicVisible ? 'public' : ''}">${product.publicVisible ? 'На сайте' : 'Только в CRM'}</span></div><h3>${C.esc(product.name)}</h3><p>${C.esc(product.description || 'Описание не добавлено')}</p><dl><div><dt>Формат</dt><dd>${C.esc(product.weight || '—')}</dd></div><div><dt>Цена по умолчанию</dt><dd>${C.money(product.price)}</dd></div><div><dt>Минимальный остаток</dt><dd>${product.minStock} ${C.esc(product.unit)}</dd></div><div><dt>Единица</dt><dd>${C.esc(product.unit)}</dd></div></dl><button class="ghost card-edit" data-edit-product="${product.id}">Изменить товар</button></div></article>`;
   }).join('') || empty('Добавьте первый товар')}</div><p class="note">Отключённые товары остаются в истории заказов и склада, но их нельзя выбрать в новых операциях.</p>`;
 }
 
@@ -551,7 +585,7 @@ function accrualsView() {
 
 function warehouseView() {
   const inventory = C.inventory(data.production, data.orders, catalogue());
-  return `<div class="product-cards">${inventory.map(item => `<article><div class="cube">❄</div><h3>${C.esc(item.name)}</h3><b class="stock-big ${item.stock < 0 ? 'danger' : ''}">${item.stock} <small>${C.esc(item.unit)}</small></b><div class="stock-line"><span>Произведено <b>${item.made}</b></span><span>Отгружено <b>${item.sold}</b></span></div>${item.stock < 0 ? '<p class="alert">Остаток отрицательный: проверьте производство и отгрузки.</p>' : ''}</article>`).join('')}</div><p class="note">Остаток рассчитывается автоматически: произведено − отгружено по неотменённым заказам.</p>`;
+  return `<div class="product-cards">${inventory.map(item => `<article class="stock-card stock-${stockLevel(item)}"><div class="cube">❄</div><h3>${C.esc(item.name)}</h3><b class="stock-big ${stockLevel(item) !== 'ok' ? 'danger' : ''}">${item.stock} <small>${C.esc(item.unit)}</small></b><div class="stock-line"><span>Произведено <b>${item.made}</b></span><span>Отгружено <b>${item.sold}</b></span><span>Минимум <b>${item.minStock || 0}</b></span></div>${stockNotice(item) ? `<p class="alert">${C.esc(stockNotice(item))}</p>` : ''}</article>`).join('')}</div><p class="note">Остаток рассчитывается автоматически: произведено − отгружено по неотменённым заказам. Минимальный остаток настраивается в карточке товара.</p>`;
 }
 
 function analyticsView() {
@@ -667,7 +701,7 @@ function openProductForm(product = null) {
   editingRecord = product ? { type: 'products', id: product.id } : null;
   $('#modal-title').textContent = product ? 'Изменить товар' : 'Добавить товар';
   const photo = productPhotoUrl(product);
-  $('#fields').innerHTML = `<label>Название товара<input name="name" value="${C.esc(product?.name || '')}" minlength="2" maxlength="160" required placeholder="Например, пищевой лёд 5 кг"></label><label>Описание<textarea name="description" maxlength="500" rows="3" placeholder="Для кого и для каких задач подходит">${C.esc(product?.description || '')}</textarea></label><div class="form-row"><label>Формат / вес<input name="weight" value="${C.esc(product?.weight || '')}" maxlength="40" placeholder="Например, 5 кг"></label><label>Единица учёта<input name="unit" value="${C.esc(product?.unit || 'шт.')}" maxlength="30" required></label></div><label>Цена по умолчанию, ₸<input name="price" type="number" min="0" step="0.01" value="${product?.price ?? 0}" required></label><label class="upload-field">Фотография товара<input name="photo" type="file" accept="image/jpeg,image/png,image/webp"><small>JPG, PNG или WebP, не более 5 МБ.${photo ? ' Новая фотография заменит текущую.' : ''}</small>${photo ? `<img src="${C.esc(photo)}" alt="Текущая фотография">` : ''}</label><div class="form-checks"><label class="check"><input name="active" type="checkbox" ${product?.active !== false ? 'checked' : ''}> Товар активен</label><label class="check"><input name="publicVisible" type="checkbox" ${product?.publicVisible !== false ? 'checked' : ''}> Показывать клиентам на сайте</label></div>`;
+  $('#fields').innerHTML = `<label>Название товара<input name="name" value="${C.esc(product?.name || '')}" minlength="2" maxlength="160" required placeholder="Например, пищевой лёд 5 кг"></label><label>Описание<textarea name="description" maxlength="500" rows="3" placeholder="Для кого и для каких задач подходит">${C.esc(product?.description || '')}</textarea></label><div class="form-row"><label>Формат / вес<input name="weight" value="${C.esc(product?.weight || '')}" maxlength="40" placeholder="Например, 5 кг"></label><label>Единица учёта<input name="unit" value="${C.esc(product?.unit || 'шт.')}" maxlength="30" required></label></div><div class="form-row"><label>Цена по умолчанию, ₸<input name="price" type="number" min="0" step="0.01" value="${product?.price ?? 0}" required></label><label>Минимальный остаток<input name="minStock" type="number" min="0" step="0.01" value="${product?.minStock ?? 0}" required><small>При этом количестве появится предупреждение</small></label></div><label class="upload-field">Фотография товара<input name="photo" type="file" accept="image/jpeg,image/png,image/webp"><small>JPG, PNG или WebP, не более 5 МБ.${photo ? ' Новая фотография заменит текущую.' : ''}</small>${photo ? `<img src="${C.esc(photo)}" alt="Текущая фотография">` : ''}</label><div class="form-checks"><label class="check"><input name="active" type="checkbox" ${product?.active !== false ? 'checked' : ''}> Товар активен</label><label class="check"><input name="publicVisible" type="checkbox" ${product?.publicVisible !== false ? 'checked' : ''}> Показывать клиентам на сайте</label></div>`;
   $('#modal').showModal();
 }
 
@@ -706,6 +740,9 @@ function openForm(record = null, dateKey = '') {
   const labels = { orders: 'Добавить заказ', clients: 'Добавить клиента', production: 'Записать производство', employees: record ? 'Изменить сотрудника' : 'Добавить сотрудника', accruals: 'Добавить начисление' };
   $('#modal-title').textContent = labels[section];
   $('#fields').innerHTML = schema.map(field => genericField(field, record)).join('');
+  if (section === 'employees' && record?.active) {
+    $('#fields').insertAdjacentHTML('beforeend', `<div class="employee-form-actions"><button type="button" class="link danger" data-archive-employee="${record.id}">Перевести сотрудника в архив</button><small>Карточка и история начислений сохранятся.</small></div>`);
+  }
   if (section === 'orders') {
     const productSelect = $('#fields [name=product]');
     const priceInput = $('#fields [name=price]');
@@ -739,6 +776,7 @@ async function saveProduct(form) {
       description: String(raw.description || '').trim(),
       weight_label: String(raw.weight || '').trim(),
       default_price: Number(raw.price),
+      min_stock: Number(raw.minStock),
       unit: String(raw.unit || '').trim(),
       active: form.elements.active.checked,
       public_visible: form.elements.publicVisible.checked,
@@ -888,6 +926,47 @@ async function updateWebsiteRequest(id, status) {
   toast('Статус заявки обновлён');
 }
 
+async function acceptWebsiteRequest(id, button) {
+  button.disabled = true;
+  const { error } = await supabase.rpc('accept_website_request', { p_request_id: id });
+  if (error) {
+    button.disabled = false;
+    toast(friendlyError(error));
+    return;
+  }
+  await loadAll();
+  render();
+  toast('Клиент и заказ созданы, заявка принята');
+}
+
+async function archiveEmployee(id) {
+  if (!manager) return;
+  const employee = data.employees.find(item => item.id === id);
+  if (!employee || !employee.active) return;
+  const member = employee.profileId ? data.members.find(item => item.id === employee.profileId) : null;
+  if (member?.role === 'owner') {
+    toast('Карточку владельца нельзя архивировать.');
+    return;
+  }
+  if (member && !owner) {
+    toast('Отключить доступ к системе может только владелец.');
+    return;
+  }
+  if (!confirm(`Перевести сотрудника «${employee.name}» в архив? История сохранится.`)) return;
+  const result = member
+    ? await supabase.rpc('manage_member', { p_member_id: member.id, p_role: member.role, p_active: false })
+    : await supabase.from('employees').update({ active: false }).eq('id', employee.id);
+  if (result.error) {
+    toast(friendlyError(result.error));
+    return;
+  }
+  $('#modal').close();
+  editingRecord = null;
+  await loadAll();
+  render();
+  toast('Сотрудник переведён в архив');
+}
+
 async function deleteSchedule(id) {
   if (!manager || !confirm('Удалить это событие из календаря?')) return;
   const { error } = await supabase.from('schedule_items').delete().eq('id', id);
@@ -1030,6 +1109,11 @@ $('#app').onclick = async event => {
     await updateWebsiteRequest(requestAction.dataset.requestId, requestAction.dataset.requestStatus);
     return;
   }
+  const requestAccept = event.target.closest('[data-accept-request]');
+  if (requestAccept) {
+    await acceptWebsiteRequest(requestAccept.dataset.acceptRequest, requestAccept);
+    return;
+  }
   if (event.target.closest('#invite')) {
     await createInvite();
     return;
@@ -1080,10 +1164,16 @@ $('#app').onchange = async event => {
 $('#add').onclick = () => openForm();
 $('#close').onclick = $('#cancel').onclick = () => $('#modal').close();
 $('#menu').onclick = () => document.querySelector('.sidebar').classList.toggle('open');
+$('#go-site').onclick = () => go('home');
 
 $('#form').onclick = async event => {
   const remove = event.target.closest('[data-delete-schedule]');
-  if (remove) await deleteSchedule(remove.dataset.deleteSchedule);
+  if (remove) {
+    await deleteSchedule(remove.dataset.deleteSchedule);
+    return;
+  }
+  const archive = event.target.closest('[data-archive-employee]');
+  if (archive) await archiveEmployee(archive.dataset.archiveEmployee);
 };
 
 $('#form').onsubmit = async event => {

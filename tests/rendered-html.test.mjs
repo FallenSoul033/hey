@@ -40,6 +40,9 @@ test("ships the configured Russian IceFresh application", async () => {
   ]);
   assert.match(html, /Чистый лёд[\s\S]*для бизнеса и дома/);
   assert.match(html, /Оставить заявку/);
+  assert.match(html, /assets\/products\/hero-icefresh\.webp/);
+  assert.match(html, /id="gallery"/);
+  assert.match(html, /id="go-site"/);
   assert.match(html, /property="og:image" content="https:\/\/icefresh\.kz\/icefresh-social\.png"/);
   assert.match(html, /name="twitter:card" content="summary_large_image"/);
   assert.match(html, /Вход для сотрудников/);
@@ -99,6 +102,34 @@ test("ships owner controls, product photos, and the operations calendar securely
   assert.match(headers, /img-src 'self' data: https:\/\/\*\.supabase\.co/);
   assert.doesNotMatch(edgeFunction, /const PRODUCT_IDS/);
   assert.match(edgeFunction, /from\("products"\)/);
+});
+
+test("implements the core approved workflow without exposing management fields publicly", async () => {
+  const root = new URL("../", import.meta.url);
+  const [app, html, migration, hardening, cup, bag] = await Promise.all([
+    readFile(new URL("public/app.js", root), "utf8"),
+    readFile(new URL("public/app-shell.html", root), "utf8"),
+    readFile(new URL("supabase/migrations/202608150004_tz_core_workflow.sql", root), "utf8"),
+    readFile(new URL("supabase/migrations/202608160001_harden_request_acceptance.sql", root), "utf8"),
+    readFile(new URL("public/assets/products/cup-250.webp", root)),
+    readFile(new URL("public/assets/products/bag-1kg.webp", root)),
+  ]);
+
+  assert.ok(cup.length > 30_000);
+  assert.ok(bag.length > 30_000);
+  assert.match(html, /Настоящие фотографии нашей продукции/);
+  assert.match(app, /BUILT_IN_PRODUCT_PHOTOS/);
+  assert.match(app, /min_stock: Number\(raw\.minStock\)/);
+  assert.match(app, /rpc\('accept_website_request'/);
+  assert.match(app, /data-archive-employee/);
+  assert.match(migration, /add column if not exists min_stock numeric\(12,2\) not null default 0/);
+  assert.match(hardening, /security invoker/);
+  assert.match(hardening, /set search_path = ''/);
+  assert.match(hardening, /for update/);
+  assert.doesNotMatch(hardening, /select \*/i);
+  assert.match(hardening, /revoke all on function public\.accept_website_request\(uuid\)/);
+  assert.match(hardening, /grant execute on function public\.accept_website_request\(uuid\)[\s\S]*to authenticated/);
+  assert.doesNotMatch(hardening, /grant execute[\s\S]{0,100}to anon/);
 });
 
 test("routes static assets through the security-header worker", async () => {
