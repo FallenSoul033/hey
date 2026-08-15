@@ -57,6 +57,15 @@ let aiMessages = [];
 let aiBusy = false;
 let aiError = '';
 
+const INTEGRATION_DETAILS = Object.freeze({
+  provider: 'OpenAI',
+  endpoint: 'https://api.openai.com/v1',
+  model: 'gpt-5.6-luna',
+  keyName: 'IceFresh',
+  organizationId: 'org-9VpK6WMwUWINBhfnGfTABkAQ',
+  projectId: 'proj_4sNROtcw6P88L5I7HK7vwwnv'
+});
+
 const navAll = [
   ['dashboard', '⌂', 'Обзор'],
   ['calendar', '▣', 'Календарь'],
@@ -69,7 +78,8 @@ const navAll = [
   ['accruals', '₸', 'Начисления'],
   ['warehouse', '▦', 'Склад'],
   ['analytics', '↗', 'Аналитика'],
-  ['ai', '◎', 'AI‑ассистент']
+  ['ai', '◎', 'AI‑ассистент'],
+  ['integrations', '⛓', 'Интеграции']
 ];
 
 const titles = {
@@ -84,7 +94,8 @@ const titles = {
   accruals: ['Оплата труда', 'Начисления'],
   warehouse: ['Остатки', 'Склад'],
   analytics: ['Показатели', 'Аналитика'],
-  ai: ['Помощник руководителя', 'AI‑ассистент IceFresh']
+  ai: ['Помощник руководителя', 'AI‑ассистент IceFresh'],
+  integrations: ['Настройки владельца', 'Интеграции']
 };
 
 const roleLabels = { owner: 'Владелец', admin: 'Администратор', staff: 'Сотрудник', pending: 'Ожидает подключения' };
@@ -471,7 +482,10 @@ function scheduleRefresh() {
 }
 
 function buildNav() {
-  const allowed = manager ? navAll : navAll.filter(item => !['products', 'employees', 'accruals', 'analytics'].includes(item[0]));
+  const allowed = navAll.filter(item => {
+    if (item[0] === 'integrations') return owner;
+    return manager || !['products', 'employees', 'accruals', 'analytics'].includes(item[0]);
+  });
   const newCount = data.requests.filter(request => request.status === 'Новая').length;
   $('#nav').innerHTML = allowed.map(item => `<button data-section="${item[0]}"><span>${item[1]}</span>${item[2]}${item[0] === 'requests' && newCount ? ` <b class="nav-count">${newCount}</b>` : ''}</button>`).join('');
 }
@@ -707,6 +721,36 @@ function aiView() {
   return `<div class="ai-layout"><aside class="ai-guide"><div class="ai-badge">${manager ? 'AI для руководителя' : 'AI для сотрудника'}</div><h2>${manager ? 'Быстрый анализ IceFresh' : 'Помощник по работе'}</h2><p>Задавайте вопросы обычными словами. Ассистент не изменяет записи — он только анализирует доступную вам сводку.</p><div class="ai-suggestions">${suggestions.map(question => `<button type="button" data-ai-question="${C.esc(question)}">${C.esc(question)}</button>`).join('')}</div><div class="ai-privacy"><b>Защита данных</b><span>Имена и телефоны не передаются. Сотрудникам недоступны начисления и финансовая аналитика руководства.</span></div></aside><section class="ai-chat"><div class="ai-chat-head"><div><span class="ai-online"></span><b>IceFresh AI</b><small>${manager ? 'Помощник по управленческому учёту' : 'Помощник по текущей работе'}</small></div>${aiMessages.length ? '<button type="button" class="link" data-ai-reset>Очистить диалог</button>' : ''}</div><div class="ai-chat-log" aria-live="polite">${messages}${aiBusy ? '<article class="ai-message assistant loading"><div>AI</div><p><i></i><i></i><i></i></p></article>' : ''}</div>${aiError ? `<p class="ai-error" role="alert">${C.esc(aiError)}</p>` : ''}<form id="ai-form" class="ai-form"><label for="ai-question">Ваш вопрос</label><textarea id="ai-question" name="question" rows="3" minlength="2" maxlength="1800" required ${aiBusy ? 'disabled' : ''} placeholder="Например: какие остатки требуют внимания?"></textarea><button class="primary" type="submit" ${aiBusy ? 'disabled' : ''}>${aiBusy ? 'Анализирую…' : 'Спросить AI'}</button></form><p class="ai-disclaimer">AI может ошибаться. Проверяйте важные решения по исходным записям CRM.</p></section></div>`;
 }
 
+function integrationsView() {
+  if (!owner) return empty('Раздел доступен только владельцу IceFresh.');
+  return `<div class="integration-status"><div><span class="integration-logo">◎</span><div><p class="eyebrow">OpenAI API</p><h2>Интеграция подключена</h2><p>Ключ хранится в защищённом серверном хранилище и используется AI‑ассистентом IceFresh.</p></div></div><span class="integration-online"><i></i> Работает</span></div><div class="integration-grid"><section class="integration-panel"><div class="panel-head"><div><p class="eyebrow">Параметры</p><h2>Паспорт подключения</h2></div><button type="button" class="ghost" data-copy-integration="safe-config">Копировать всё</button></div><div class="integration-fields">${integrationRow('Провайдер', INTEGRATION_DETAILS.provider, 'provider')}${integrationRow('Адрес API', INTEGRATION_DETAILS.endpoint, 'endpoint')}${integrationRow('Модель', INTEGRATION_DETAILS.model, 'model')}${integrationRow('Название ключа', INTEGRATION_DETAILS.keyName, 'key-name')}${integrationRow('Project ID', INTEGRATION_DETAILS.projectId, 'project-id')}${integrationRow('Organization ID', INTEGRATION_DETAILS.organizationId, 'organization-id')}</div><p class="integration-note">Эти параметры можно копировать: они не дают доступа без отдельного секретного ключа.</p></section><section class="integration-panel secret-panel"><p class="eyebrow">Секрет</p><h2>API‑ключ защищён</h2><div class="secret-value"><code>••••••••••••••••••••••••</code><span>Только на сервере</span></div><p>Полный ключ нельзя показать или скопировать из сайта. Иначе любой человек или вредоносное расширение браузера сможет получить доступ и расходовать ваш баланс.</p><a class="primary integration-link" href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer">Управлять ключами в OpenAI ↗</a><small>Для нового внешнего сервиса создавайте отдельный ключ. Тогда его можно отключить, не останавливая IceFresh.</small></section></div><section class="integration-panel service-panel"><div class="panel-head"><div><p class="eyebrow">Другие сервисы</p><h2>Как подключить любой совместимый сервис</h2></div><span class="owner-only">Только владелец</span></div><div class="integration-steps"><article><b>1</b><div><h3>Создайте отдельный ключ</h3><p>Откройте OpenAI Platform, выберите проект IceFresh и создайте новый ключ специально для нужного сервиса.</p></div></article><article><b>2</b><div><h3>Скопируйте параметры</h3><p>Используйте Project ID, Organization ID, адрес API и модель из паспорта подключения выше.</p></div></article><article><b>3</b><div><h3>Сохраните ключ как секрет</h3><p>Вставляйте его только в защищённое поле настроек внешнего сервиса. Не отправляйте ключ в чат и не храните в таблицах.</p></div></article></div></section><div class="integration-grid compact"><section class="integration-panel"><p class="eyebrow">Лимиты IceFresh</p><h2>Контроль расходов</h2><dl class="integration-summary"><div><dt>На пользователя</dt><dd>до 12 запросов в час</dd></div><div><dt>На организацию</dt><dd>до 500 запросов в месяц</dd></div><div><dt>Данные сотрудников</dt><dd>без финансов и начислений</dd></div></dl></section><section class="integration-panel"><p class="eyebrow">Важно</p><h2>Что можно передавать</h2><ul class="integration-checklist"><li>Можно: параметры из паспорта подключения.</li><li>Можно: отдельный ключ через защищённое поле сервиса.</li><li>Нельзя: публиковать секретный ключ на сайте или в сообщениях.</li></ul></section></div>`;
+}
+
+function integrationRow(label, value, key) {
+  return `<div><span>${C.esc(label)}</span><code>${C.esc(value)}</code><button type="button" class="link" data-copy-integration="${key}" aria-label="Копировать ${C.esc(label)}">Копировать</button></div>`;
+}
+
+function integrationCopyValue(key) {
+  const values = {
+    provider: INTEGRATION_DETAILS.provider,
+    endpoint: INTEGRATION_DETAILS.endpoint,
+    model: INTEGRATION_DETAILS.model,
+    'key-name': INTEGRATION_DETAILS.keyName,
+    'project-id': INTEGRATION_DETAILS.projectId,
+    'organization-id': INTEGRATION_DETAILS.organizationId,
+    'safe-config': JSON.stringify({
+      provider: INTEGRATION_DETAILS.provider,
+      base_url: INTEGRATION_DETAILS.endpoint,
+      model: INTEGRATION_DETAILS.model,
+      key_name: INTEGRATION_DETAILS.keyName,
+      project_id: INTEGRATION_DETAILS.projectId,
+      organization_id: INTEGRATION_DETAILS.organizationId,
+      api_key: 'CREATE_A_SEPARATE_SECRET_KEY_IN_OPENAI_PLATFORM'
+    }, null, 2)
+  };
+  return values[key] || '';
+}
+
 async function askAi(question) {
   const message = String(question || '').trim();
   if (aiBusy || message.length < 2) return;
@@ -749,7 +793,8 @@ const views = {
   accruals: accrualsView,
   warehouse: warehouseView,
   analytics: analyticsView,
-  ai: aiView
+  ai: aiView,
+  integrations: integrationsView
 };
 
 function render() {
@@ -1002,7 +1047,7 @@ async function copyText(text, successText) {
     await navigator.clipboard.writeText(text);
     toast(successText);
   } catch {
-    window.prompt('Скопируйте ссылку:', text);
+    window.prompt('Скопируйте значение:', text);
   }
 }
 
@@ -1233,6 +1278,12 @@ $('#app').onclick = async event => {
   const aiQuestion = event.target.closest('[data-ai-question]');
   if (aiQuestion) {
     await askAi(aiQuestion.dataset.aiQuestion);
+    return;
+  }
+  const integrationCopy = event.target.closest('[data-copy-integration]');
+  if (integrationCopy) {
+    const value = integrationCopyValue(integrationCopy.dataset.copyIntegration);
+    if (value) await copyText(value, 'Параметр скопирован');
     return;
   }
   if (event.target.closest('[data-ai-reset]')) {

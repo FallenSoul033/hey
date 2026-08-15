@@ -13,9 +13,11 @@
     'accruals',
     'warehouse',
     'analytics',
-    'ai'
+    'ai',
+    'integrations'
   ]);
   const MANAGER_ROUTES = new Set(['products', 'employees', 'accruals', 'analytics']);
+  const OWNER_ROUTES = new Set(['integrations']);
 
   function parseHash(hash) {
     const route = String(hash || '')
@@ -46,7 +48,10 @@
     }
 
     const manager = access.role === 'owner' || access.role === 'admin';
-    const route = APP_ROUTES.has(requested) && (!MANAGER_ROUTES.has(requested) || manager)
+    const owner = access.role === 'owner';
+    const route = APP_ROUTES.has(requested)
+      && (!MANAGER_ROUTES.has(requested) || manager)
+      && (!OWNER_ROUTES.has(requested) || owner)
       ? requested
       : 'dashboard';
     return { screen: 'app', route };

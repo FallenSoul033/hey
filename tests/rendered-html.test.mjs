@@ -182,3 +182,21 @@ test("ships a protected, privacy-minimized AI assistant without exposing OpenAI 
   assert.match(styles, /\.ai-layout/);
   assert.doesNotMatch(`${app}\n${routes}\n${worker}\n${assistant}`, /sk-proj-|OPENAI_API_KEY\s*[:=]\s*["']sk-/i);
 });
+
+test("ships an owner-only integration centre without exposing the production secret", async () => {
+  const root = new URL("../public/", import.meta.url);
+  const [app, routes, styles] = await Promise.all([
+    readFile(new URL("app.js", root), "utf8"),
+    readFile(new URL("routes.js", root), "utf8"),
+    readFile(new URL("admin.css", root), "utf8"),
+  ]);
+
+  assert.match(routes, /OWNER_ROUTES = new Set\(\['integrations'\]\)/);
+  assert.match(routes, /!OWNER_ROUTES\.has\(requested\) \|\| owner/);
+  assert.match(app, /integrations: \['Настройки владельца', 'Интеграции'\]/);
+  assert.match(app, /Полный ключ нельзя показать или скопировать из сайта/);
+  assert.match(app, /CREATE_A_SEPARATE_SECRET_KEY_IN_OPENAI_PLATFORM/);
+  assert.match(app, /https:\/\/platform\.openai\.com\/api-keys/);
+  assert.match(styles, /\.integration-status/);
+  assert.doesNotMatch(`${app}\n${routes}`, /sk-proj-[A-Za-z0-9_-]{20,}/);
+});
