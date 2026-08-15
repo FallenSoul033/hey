@@ -8,7 +8,6 @@ const ALLOWED_ORIGINS = new Set([
   "http://localhost:5173",
   "http://localhost:8080",
 ]);
-const PRODUCT_IDS = new Set(["cup250", "bag1", "bag2"]);
 const CUSTOMER_TYPES = new Set(["private", "business"]);
 const RATE_LIMIT_PER_HOUR = 5;
 
@@ -75,7 +74,7 @@ Deno.serve(async (request: Request) => {
   const phone = cleanText(input.phone, 40);
   const phoneDigits = phone.replace(/\D/g, "");
   const customerType = cleanText(input.customerType, 20);
-  const productId = cleanText(input.productId, 20);
+  const productId = cleanText(input.productId, 80);
   const message = cleanText(input.message, 500);
   const quantity = Number(input.quantity);
 
@@ -84,7 +83,7 @@ Deno.serve(async (request: Request) => {
     phoneDigits.length < 7 ||
     phoneDigits.length > 15 ||
     !CUSTOMER_TYPES.has(customerType) ||
-    !PRODUCT_IDS.has(productId) ||
+    productId.length < 1 ||
     !Number.isInteger(quantity) ||
     quantity < 1 ||
     quantity > 10000
@@ -127,6 +126,22 @@ Deno.serve(async (request: Request) => {
   if (organizationError || !organization) {
     console.error("website request organization lookup failed", organizationError?.code);
     return response(origin, { ok: false, message: "Сервис временно недоступен." }, 503);
+  }
+
+  const { data: product, error: productError } = await supabase
+    .from("products")
+    .select("id")
+    .eq("id", productId)
+    .eq("organization_id", organization.id)
+    .eq("active", true)
+    .eq("public_visible", true)
+    .maybeSingle();
+  if (productError) {
+    console.error("website request product lookup failed", productError.code);
+    return response(origin, { ok: false, message: "Сервис временно недоступен." }, 503);
+  }
+  if (!product) {
+    return response(origin, { ok: false, message: "Выбранный товар сейчас недоступен." }, 400);
   }
 
   const { data, error } = await supabase

@@ -63,7 +63,7 @@ test("keeps public enquiries separate from protected CRM records", async () => {
   assert.match(routes, /screen: 'public'/);
   assert.match(app, /functions\/v1\/public-order-request/);
   assert.match(app, /from\('website_requests'\)/);
-  assert.match(app, /if\(route\(\)!=='home'\)replaceRoute\('login'\)/);
+  assert.match(app, /if \(route\(\) !== 'home'\) replaceRoute\('login'\)/);
   assert.doesNotMatch(app, /service_role|sb_secret_/i);
   assert.match(migration, /alter table public\.website_requests enable row level security/);
   assert.match(migration, /revoke all privileges on table public\.website_requests from anon, authenticated/);
@@ -72,6 +72,31 @@ test("keeps public enquiries separate from protected CRM records", async () => {
   assert.match(edgeFunction, /ALLOWED_ORIGINS/);
   assert.match(edgeFunction, /RATE_LIMIT_PER_HOUR = 5/);
   assert.match(edgeFunction, /SUPABASE_SERVICE_ROLE_KEY/);
+});
+
+test("ships owner controls, product photos, and the operations calendar securely", async () => {
+  const root = new URL("../", import.meta.url);
+  const [app, routes, migration, headers, edgeFunction] = await Promise.all([
+    readFile(new URL("public/app.js", root), "utf8"),
+    readFile(new URL("public/routes.js", root), "utf8"),
+    readFile(new URL("supabase/migrations/202608150002_admin_catalog_calendar.sql", root), "utf8"),
+    readFile(new URL("public/_headers", root), "utf8"),
+    readFile(new URL("supabase/functions/public-order-request/index.ts", root), "utf8"),
+  ]);
+
+  assert.match(routes, /'calendar'/);
+  assert.match(routes, /'products'/);
+  assert.match(app, /from\('schedule_items'\)/);
+  assert.match(app, /storage\.from\(PRODUCT_IMAGE_BUCKET\)\.upload/);
+  assert.match(app, /rpc\('manage_member'/);
+  assert.match(app, /Доступ к системе/);
+  assert.match(migration, /alter table public\.schedule_items enable row level security/);
+  assert.match(migration, /create policy products_manage/);
+  assert.match(migration, /bucket_id = 'product-images'/);
+  assert.match(migration, /revoke execute on function public\.manage_member/);
+  assert.match(headers, /img-src 'self' data: https:\/\/\*\.supabase\.co/);
+  assert.doesNotMatch(edgeFunction, /const PRODUCT_IDS/);
+  assert.match(edgeFunction, /from\("products"\)/);
 });
 
 test("routes static assets through the security-header worker", async () => {

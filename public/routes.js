@@ -3,16 +3,18 @@
   const AUTH_ROUTES = new Set(['login', 'register']);
   const APP_ROUTES = new Set([
     'dashboard',
+    'calendar',
     'requests',
     'orders',
     'clients',
     'production',
+    'products',
     'employees',
     'accruals',
     'warehouse',
     'analytics'
   ]);
-  const MANAGER_ROUTES = new Set(['employees', 'accruals', 'analytics']);
+  const MANAGER_ROUTES = new Set(['products', 'employees', 'accruals', 'analytics']);
 
   function parseHash(hash) {
     const route = String(hash || '')

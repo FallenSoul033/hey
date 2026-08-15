@@ -12,6 +12,7 @@ async function loadRoutes() {
 
 const guest = { authenticated: false, onboarded: false, role: null, active: false };
 const staff = { authenticated: true, onboarded: true, role: "staff", active: true };
+const owner = { authenticated: true, onboarded: true, role: "owner", active: true };
 
 test("the empty URL is the public IceFresh site", async () => {
   const routes = await loadRoutes();
@@ -31,5 +32,17 @@ test("CRM routes remain protected while enquiries are available to staff", async
   assert.deepEqual(
     structuredClone(routes.resolve("requests", staff)),
     { screen: "app", route: "requests" },
+  );
+  assert.deepEqual(
+    structuredClone(routes.resolve("calendar", staff)),
+    { screen: "app", route: "calendar" },
+  );
+  assert.deepEqual(
+    structuredClone(routes.resolve("products", staff)),
+    { screen: "app", route: "dashboard" },
+  );
+  assert.deepEqual(
+    structuredClone(routes.resolve("products", owner)),
+    { screen: "app", route: "products" },
   );
 });
