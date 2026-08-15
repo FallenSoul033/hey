@@ -48,7 +48,7 @@ test("CRM routes remain protected while enquiries are available to staff", async
   );
   assert.deepEqual(
     structuredClone(routes.resolve("ai", staff)),
-    { screen: "app", route: "dashboard" },
+    { screen: "app", route: "ai" },
   );
   assert.deepEqual(
     structuredClone(routes.resolve("ai", admin)),

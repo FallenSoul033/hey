@@ -471,7 +471,7 @@ function scheduleRefresh() {
 }
 
 function buildNav() {
-  const allowed = manager ? navAll : navAll.filter(item => !['products', 'employees', 'accruals', 'analytics', 'ai'].includes(item[0]));
+  const allowed = manager ? navAll : navAll.filter(item => !['products', 'employees', 'accruals', 'analytics'].includes(item[0]));
   const newCount = data.requests.filter(request => request.status === 'Новая').length;
   $('#nav').innerHTML = allowed.map(item => `<button data-section="${item[0]}"><span>${item[1]}</span>${item[2]}${item[0] === 'requests' && newCount ? ` <b class="nav-count">${newCount}</b>` : ''}</button>`).join('');
 }
@@ -634,37 +634,24 @@ function rounded(value) {
 }
 
 function aiBusinessContext() {
-  const value = metrics();
   const inventory = C.inventory(data.production, data.orders, catalogue());
   const productionByProduct = catalogue().map(product => ({
     product: product.name,
     quantity: rounded(data.production.filter(item => item.product === product.id).reduce((sum, item) => sum + item.qty, 0))
   }));
-  const totalAccrued = data.accruals.reduce((sum, item) => sum + C.calcAccrual(item), 0);
-  const totalPaidAccruals = data.accruals.filter(item => item.paid).reduce((sum, item) => sum + C.calcAccrual(item), 0);
-  return {
+  const operationalContext = {
     organization: organization?.name || 'IceFresh',
     generatedAt: new Date().toISOString(),
+    accessLevel: manager ? 'management' : 'staff_operations',
     currency: 'KZT',
-    managementAccountingNotice: 'Суммы являются данными управленческого, а не официального бухгалтерского учёта.',
-    sales: {
-      activeOrders: value.orders,
-      revenue: rounded(value.sales),
-      received: rounded(value.paid),
-      receivables: rounded(value.debt),
+    orders: {
       ordersByStatus: groupedCount(data.orders, 'status'),
       recentOrdersWithoutPersonalData: data.orders.slice(0, 10).map(item => ({
         date: item.date,
         product: prod(item.product),
         quantity: item.qty,
-        total: rounded(C.calcOrder(item).total),
-        paid: rounded(C.calcOrder(item).paid),
         status: item.status
       }))
-    },
-    clients: {
-      total: data.clients.length,
-      byCategory: groupedCount(data.clients, 'category')
     },
     websiteRequests: {
       total: data.requests.length,
@@ -679,36 +666,50 @@ function aiBusinessContext() {
       minimumStock: rounded(item.minStock),
       attention: stockNotice(item) || null
     })),
-    accruals: {
-      total: rounded(totalAccrued),
-      paid: rounded(totalPaidAccruals),
-      payable: rounded(totalAccrued - totalPaidAccruals)
-    },
     upcomingScheduleWithoutPersonalData: openScheduleItems().slice(0, 8).map(item => ({
       type: item.type,
       scheduledAt: item.scheduledAt,
       status: item.status
     }))
   };
+  if (!manager) return operationalContext;
+  const value = metrics();
+  const totalAccrued = data.accruals.reduce((sum, item) => sum + C.calcAccrual(item), 0);
+  const totalPaidAccruals = data.accruals.filter(item => item.paid).reduce((sum, item) => sum + C.calcAccrual(item), 0);
+  return {
+    ...operationalContext,
+    managementAccountingNotice: 'Суммы являются данными управленческого, а не официального бухгалтерского учёта.',
+    sales: {
+      activeOrders: value.orders,
+      revenue: rounded(value.sales),
+      received: rounded(value.paid),
+      receivables: rounded(value.debt)
+    },
+    clients: {
+      total: data.clients.length,
+      byCategory: groupedCount(data.clients, 'category')
+    },
+    accruals: {
+      total: rounded(totalAccrued),
+      paid: rounded(totalPaidAccruals),
+      payable: rounded(totalAccrued - totalPaidAccruals)
+    }
+  };
 }
 
 function aiView() {
-  if (!manager) return empty('AI‑ассистент доступен только владельцу и администраторам.');
-  const suggestions = [
-    'Что сейчас требует моего внимания?',
-    'Какие товары нужно произвести в первую очередь?',
-    'Сделай краткий управленческий отчёт.',
-    'Проанализируй дебиторскую задолженность.'
-  ];
+  const suggestions = manager
+    ? ['Что сейчас требует моего внимания?', 'Какие товары нужно произвести в первую очередь?', 'Сделай краткий управленческий отчёт.', 'Проанализируй дебиторскую задолженность.']
+    : ['Какие заказы сейчас в работе?', 'Какие товары нужно произвести?', 'Что проверить на складе?', 'Какие ближайшие задачи в календаре?'];
   const messages = aiMessages.length
     ? aiMessages.map(message => `<article class="ai-message ${message.role}"><div>${message.role === 'assistant' ? 'AI' : 'Вы'}</div><p>${C.esc(message.content)}</p></article>`).join('')
-    : `<div class="ai-empty"><span>◎</span><h2>Чем помочь сегодня?</h2><p>Ассистент видит только обезличенную сводку CRM: продажи, остатки, производство, начисления и ближайшие планы.</p></div>`;
-  return `<div class="ai-layout"><aside class="ai-guide"><div class="ai-badge">AI для руководителя</div><h2>Быстрый анализ IceFresh</h2><p>Задавайте вопросы обычными словами. Ассистент не изменяет записи — он только анализирует текущую сводку.</p><div class="ai-suggestions">${suggestions.map(question => `<button type="button" data-ai-question="${C.esc(question)}">${C.esc(question)}</button>`).join('')}</div><div class="ai-privacy"><b>Защита данных</b><span>Имена, телефоны клиентов и сотрудников не передаются. Доступ есть только у владельца и администраторов.</span></div></aside><section class="ai-chat"><div class="ai-chat-head"><div><span class="ai-online"></span><b>IceFresh AI</b><small>Помощник по управленческому учёту</small></div>${aiMessages.length ? '<button type="button" class="link" data-ai-reset>Очистить диалог</button>' : ''}</div><div class="ai-chat-log" aria-live="polite">${messages}${aiBusy ? '<article class="ai-message assistant loading"><div>AI</div><p><i></i><i></i><i></i></p></article>' : ''}</div>${aiError ? `<p class="ai-error" role="alert">${C.esc(aiError)}</p>` : ''}<form id="ai-form" class="ai-form"><label for="ai-question">Ваш вопрос</label><textarea id="ai-question" name="question" rows="3" minlength="2" maxlength="1800" required ${aiBusy ? 'disabled' : ''} placeholder="Например: какие остатки требуют внимания?"></textarea><button class="primary" type="submit" ${aiBusy ? 'disabled' : ''}>${aiBusy ? 'Анализирую…' : 'Спросить AI'}</button></form><p class="ai-disclaimer">AI может ошибаться. Перед оплатами, начислениями и бухгалтерскими решениями проверяйте исходные записи.</p></section></div>`;
+    : `<div class="ai-empty"><span>◎</span><h2>Чем помочь сегодня?</h2><p>${manager ? 'Ассистент видит обезличенную управленческую сводку CRM.' : 'Ассистент видит только обезличенные рабочие данные без начислений и финансовой аналитики.'}</p></div>`;
+  return `<div class="ai-layout"><aside class="ai-guide"><div class="ai-badge">${manager ? 'AI для руководителя' : 'AI для сотрудника'}</div><h2>${manager ? 'Быстрый анализ IceFresh' : 'Помощник по работе'}</h2><p>Задавайте вопросы обычными словами. Ассистент не изменяет записи — он только анализирует доступную вам сводку.</p><div class="ai-suggestions">${suggestions.map(question => `<button type="button" data-ai-question="${C.esc(question)}">${C.esc(question)}</button>`).join('')}</div><div class="ai-privacy"><b>Защита данных</b><span>Имена и телефоны не передаются. Сотрудникам недоступны начисления и финансовая аналитика руководства.</span></div></aside><section class="ai-chat"><div class="ai-chat-head"><div><span class="ai-online"></span><b>IceFresh AI</b><small>${manager ? 'Помощник по управленческому учёту' : 'Помощник по текущей работе'}</small></div>${aiMessages.length ? '<button type="button" class="link" data-ai-reset>Очистить диалог</button>' : ''}</div><div class="ai-chat-log" aria-live="polite">${messages}${aiBusy ? '<article class="ai-message assistant loading"><div>AI</div><p><i></i><i></i><i></i></p></article>' : ''}</div>${aiError ? `<p class="ai-error" role="alert">${C.esc(aiError)}</p>` : ''}<form id="ai-form" class="ai-form"><label for="ai-question">Ваш вопрос</label><textarea id="ai-question" name="question" rows="3" minlength="2" maxlength="1800" required ${aiBusy ? 'disabled' : ''} placeholder="Например: какие остатки требуют внимания?"></textarea><button class="primary" type="submit" ${aiBusy ? 'disabled' : ''}>${aiBusy ? 'Анализирую…' : 'Спросить AI'}</button></form><p class="ai-disclaimer">AI может ошибаться. Проверяйте важные решения по исходным записям CRM.</p></section></div>`;
 }
 
 async function askAi(question) {
   const message = String(question || '').trim();
-  if (!manager || aiBusy || message.length < 2) return;
+  if (aiBusy || message.length < 2) return;
   const history = aiMessages.slice(-6).map(item => ({ role: item.role, content: item.content.slice(0, 1000) }));
   aiMessages.push({ role: 'user', content: message });
   aiBusy = true;

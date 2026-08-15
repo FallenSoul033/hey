@@ -141,7 +141,7 @@ test("routes static assets through the security-header worker", async () => {
 
 test("ships a protected, privacy-minimized AI assistant without exposing OpenAI credentials", async () => {
   const root = new URL("../", import.meta.url);
-  const [app, routes, worker, assistant, styles, migration, atomicLimit] = await Promise.all([
+  const [app, routes, worker, assistant, styles, migration, atomicLimit, staffLimit] = await Promise.all([
     readFile(new URL("public/app.js", root), "utf8"),
     readFile(new URL("public/routes.js", root), "utf8"),
     readFile(new URL("worker/index.ts", root), "utf8"),
@@ -149,15 +149,18 @@ test("ships a protected, privacy-minimized AI assistant without exposing OpenAI 
     readFile(new URL("public/admin.css", root), "utf8"),
     readFile(new URL("supabase/migrations/202608160002_ai_usage_rate_limit.sql", root), "utf8"),
     readFile(new URL("supabase/migrations/202608160003_atomic_ai_rate_limit.sql", root), "utf8"),
+    readFile(new URL("supabase/migrations/202608160004_staff_ai_monthly_limit.sql", root), "utf8"),
   ]);
 
-  assert.match(routes, /MANAGER_ROUTES[\s\S]*'ai'/);
+  assert.doesNotMatch(routes, /MANAGER_ROUTES = new Set\(\[[^\]]*'ai'/);
   assert.match(app, /AI‑ассистент IceFresh/);
-  assert.match(app, /Имена, телефоны клиентов и сотрудников не передаются/);
+  assert.match(app, /AI для сотрудника/);
+  assert.match(app, /Сотрудникам недоступны начисления и финансовая аналитика/);
   assert.match(app, /fetch\('\/api\/ai-assistant'/);
   assert.match(worker, /handleAiAssistant/);
   assert.match(assistant, /\/auth\/v1\/user/);
-  assert.match(assistant, /\["owner", "admin"\]/);
+  assert.match(assistant, /\["owner", "admin", "staff"\]/);
+  assert.match(assistant, /gpt-5\.6-luna/);
   assert.match(assistant, /store: false/);
   assert.match(assistant, /max_output_tokens: 700/);
   assert.match(assistant, /REQUESTS_PER_HOUR = 12/);
@@ -170,6 +173,12 @@ test("ships a protected, privacy-minimized AI assistant without exposing OpenAI 
   assert.match(atomicLimit, /v_recent_count >= 12/);
   assert.match(atomicLimit, /revoke all on function public\.reserve_ai_request\(\)/);
   assert.doesNotMatch(atomicLimit, /security definer/i);
+  assert.match(staffLimit, /create table private\.ai_monthly_usage/);
+  assert.match(staffLimit, /request_count between 0 and 500/);
+  assert.match(staffLimit, /private\.reserve_ai_monthly_slot/);
+  assert.match(staffLimit, /returns text[\s\S]*security invoker/);
+  assert.match(staffLimit, /500\/calendar-month\/organization/);
+  assert.doesNotMatch(staffLimit, /grant (?:select|insert|update|delete)[^;]*ai_monthly_usage/i);
   assert.match(styles, /\.ai-layout/);
   assert.doesNotMatch(`${app}\n${routes}\n${worker}\n${assistant}`, /sk-proj-|OPENAI_API_KEY\s*[:=]\s*["']sk-/i);
 });
