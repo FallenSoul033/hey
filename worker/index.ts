@@ -1,8 +1,9 @@
 /** Cloudflare Worker entry point for the vinext-starter template. */
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
+import { handleAiAssistant, type AiAssistantEnv } from "./ai-assistant";
 
-interface Env {
+interface Env extends AiAssistantEnv {
   ASSETS: Fetcher;
   DB: D1Database;
   IMAGES: {
@@ -43,6 +44,10 @@ function secure(response: Response, noCache = false): Response {
 const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+
+    if (url.pathname === "/api/ai-assistant") {
+      return secure(await handleAiAssistant(request, env), true);
+    }
 
     if (url.pathname === "/" || url.pathname === "/index.html") {
       const shellRequest = new Request(new URL("/app-shell.html", request.url), {

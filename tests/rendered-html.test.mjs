@@ -138,3 +138,38 @@ test("routes static assets through the security-header worker", async () => {
   );
   assert.equal(config.assets?.run_worker_first, true);
 });
+
+test("ships a protected, privacy-minimized AI assistant without exposing OpenAI credentials", async () => {
+  const root = new URL("../", import.meta.url);
+  const [app, routes, worker, assistant, styles, migration, atomicLimit] = await Promise.all([
+    readFile(new URL("public/app.js", root), "utf8"),
+    readFile(new URL("public/routes.js", root), "utf8"),
+    readFile(new URL("worker/index.ts", root), "utf8"),
+    readFile(new URL("worker/ai-assistant.ts", root), "utf8"),
+    readFile(new URL("public/admin.css", root), "utf8"),
+    readFile(new URL("supabase/migrations/202608160002_ai_usage_rate_limit.sql", root), "utf8"),
+    readFile(new URL("supabase/migrations/202608160003_atomic_ai_rate_limit.sql", root), "utf8"),
+  ]);
+
+  assert.match(routes, /MANAGER_ROUTES[\s\S]*'ai'/);
+  assert.match(app, /AI‑ассистент IceFresh/);
+  assert.match(app, /Имена, телефоны клиентов и сотрудников не передаются/);
+  assert.match(app, /fetch\('\/api\/ai-assistant'/);
+  assert.match(worker, /handleAiAssistant/);
+  assert.match(assistant, /\/auth\/v1\/user/);
+  assert.match(assistant, /\["owner", "admin"\]/);
+  assert.match(assistant, /store: false/);
+  assert.match(assistant, /max_output_tokens: 700/);
+  assert.match(assistant, /REQUESTS_PER_HOUR = 12/);
+  assert.match(assistant, /rest\/v1\/rpc\/reserve_ai_request/);
+  assert.match(migration, /alter table public\.ai_usage enable row level security/);
+  assert.match(migration, /grant select \(id, organization_id, user_id, requested_at\), insert \(organization_id, user_id\)/);
+  assert.doesNotMatch(migration, /grant (?:update|delete)/i);
+  assert.match(atomicLimit, /security invoker/);
+  assert.match(atomicLimit, /pg_advisory_xact_lock/);
+  assert.match(atomicLimit, /v_recent_count >= 12/);
+  assert.match(atomicLimit, /revoke all on function public\.reserve_ai_request\(\)/);
+  assert.doesNotMatch(atomicLimit, /security definer/i);
+  assert.match(styles, /\.ai-layout/);
+  assert.doesNotMatch(`${app}\n${routes}\n${worker}\n${assistant}`, /sk-proj-|OPENAI_API_KEY\s*[:=]\s*["']sk-/i);
+});

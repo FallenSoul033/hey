@@ -12,9 +12,10 @@
     'employees',
     'accruals',
     'warehouse',
-    'analytics'
+    'analytics',
+    'ai'
   ]);
-  const MANAGER_ROUTES = new Set(['products', 'employees', 'accruals', 'analytics']);
+  const MANAGER_ROUTES = new Set(['products', 'employees', 'accruals', 'analytics', 'ai']);
 
   function parseHash(hash) {
     const route = String(hash || '')

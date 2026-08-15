@@ -53,6 +53,9 @@ let editingRecord = null;
 let calendarCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 let publicProducts = [];
 let data = emptyData();
+let aiMessages = [];
+let aiBusy = false;
+let aiError = '';
 
 const navAll = [
   ['dashboard', '⌂', 'Обзор'],
@@ -65,7 +68,8 @@ const navAll = [
   ['employees', '♧', 'Сотрудники'],
   ['accruals', '₸', 'Начисления'],
   ['warehouse', '▦', 'Склад'],
-  ['analytics', '↗', 'Аналитика']
+  ['analytics', '↗', 'Аналитика'],
+  ['ai', '◎', 'AI‑ассистент']
 ];
 
 const titles = {
@@ -79,7 +83,8 @@ const titles = {
   employees: ['Команда', 'Сотрудники и доступ'],
   accruals: ['Оплата труда', 'Начисления'],
   warehouse: ['Остатки', 'Склад'],
-  analytics: ['Показатели', 'Аналитика']
+  analytics: ['Показатели', 'Аналитика'],
+  ai: ['Помощник руководителя', 'AI‑ассистент IceFresh']
 };
 
 const roleLabels = { owner: 'Владелец', admin: 'Администратор', staff: 'Сотрудник', pending: 'Ожидает подключения' };
@@ -466,7 +471,7 @@ function scheduleRefresh() {
 }
 
 function buildNav() {
-  const allowed = manager ? navAll : navAll.filter(item => !['products', 'employees', 'accruals', 'analytics'].includes(item[0]));
+  const allowed = manager ? navAll : navAll.filter(item => !['products', 'employees', 'accruals', 'analytics', 'ai'].includes(item[0]));
   const newCount = data.requests.filter(request => request.status === 'Новая').length;
   $('#nav').innerHTML = allowed.map(item => `<button data-section="${item[0]}"><span>${item[1]}</span>${item[2]}${item[0] === 'requests' && newCount ? ` <b class="nav-count">${newCount}</b>` : ''}</button>`).join('');
 }
@@ -616,6 +621,121 @@ function calendarView() {
   }).join('')}</div></section><aside class="calendar-agenda"><div class="panel-head"><div><p class="eyebrow">Следующие</p><h2>Ближайшие планы</h2></div></div><div class="upcoming-list">${upcoming.map(item => scheduleCompact(item)).join('') || empty('План пока свободен')}</div><div class="calendar-legend"><span class="type-shipment">Отгрузка</span><span class="type-commitment">Обязательство</span><span class="type-production">Производство</span><span class="type-other">Другое</span></div></aside></div>`;
 }
 
+function groupedCount(items, field) {
+  return items.reduce((result, item) => {
+    const key = String(item[field] || 'Не указано');
+    result[key] = (result[key] || 0) + 1;
+    return result;
+  }, {});
+}
+
+function rounded(value) {
+  return Math.round((Number(value) || 0) * 100) / 100;
+}
+
+function aiBusinessContext() {
+  const value = metrics();
+  const inventory = C.inventory(data.production, data.orders, catalogue());
+  const productionByProduct = catalogue().map(product => ({
+    product: product.name,
+    quantity: rounded(data.production.filter(item => item.product === product.id).reduce((sum, item) => sum + item.qty, 0))
+  }));
+  const totalAccrued = data.accruals.reduce((sum, item) => sum + C.calcAccrual(item), 0);
+  const totalPaidAccruals = data.accruals.filter(item => item.paid).reduce((sum, item) => sum + C.calcAccrual(item), 0);
+  return {
+    organization: organization?.name || 'IceFresh',
+    generatedAt: new Date().toISOString(),
+    currency: 'KZT',
+    managementAccountingNotice: 'Суммы являются данными управленческого, а не официального бухгалтерского учёта.',
+    sales: {
+      activeOrders: value.orders,
+      revenue: rounded(value.sales),
+      received: rounded(value.paid),
+      receivables: rounded(value.debt),
+      ordersByStatus: groupedCount(data.orders, 'status'),
+      recentOrdersWithoutPersonalData: data.orders.slice(0, 10).map(item => ({
+        date: item.date,
+        product: prod(item.product),
+        quantity: item.qty,
+        total: rounded(C.calcOrder(item).total),
+        paid: rounded(C.calcOrder(item).paid),
+        status: item.status
+      }))
+    },
+    clients: {
+      total: data.clients.length,
+      byCategory: groupedCount(data.clients, 'category')
+    },
+    websiteRequests: {
+      total: data.requests.length,
+      byStatus: groupedCount(data.requests, 'status')
+    },
+    production: productionByProduct,
+    inventory: inventory.map(item => ({
+      product: item.name,
+      produced: rounded(item.made),
+      shipped: rounded(item.sold),
+      stock: rounded(item.stock),
+      minimumStock: rounded(item.minStock),
+      attention: stockNotice(item) || null
+    })),
+    accruals: {
+      total: rounded(totalAccrued),
+      paid: rounded(totalPaidAccruals),
+      payable: rounded(totalAccrued - totalPaidAccruals)
+    },
+    upcomingScheduleWithoutPersonalData: openScheduleItems().slice(0, 8).map(item => ({
+      type: item.type,
+      scheduledAt: item.scheduledAt,
+      status: item.status
+    }))
+  };
+}
+
+function aiView() {
+  if (!manager) return empty('AI‑ассистент доступен только владельцу и администраторам.');
+  const suggestions = [
+    'Что сейчас требует моего внимания?',
+    'Какие товары нужно произвести в первую очередь?',
+    'Сделай краткий управленческий отчёт.',
+    'Проанализируй дебиторскую задолженность.'
+  ];
+  const messages = aiMessages.length
+    ? aiMessages.map(message => `<article class="ai-message ${message.role}"><div>${message.role === 'assistant' ? 'AI' : 'Вы'}</div><p>${C.esc(message.content)}</p></article>`).join('')
+    : `<div class="ai-empty"><span>◎</span><h2>Чем помочь сегодня?</h2><p>Ассистент видит только обезличенную сводку CRM: продажи, остатки, производство, начисления и ближайшие планы.</p></div>`;
+  return `<div class="ai-layout"><aside class="ai-guide"><div class="ai-badge">AI для руководителя</div><h2>Быстрый анализ IceFresh</h2><p>Задавайте вопросы обычными словами. Ассистент не изменяет записи — он только анализирует текущую сводку.</p><div class="ai-suggestions">${suggestions.map(question => `<button type="button" data-ai-question="${C.esc(question)}">${C.esc(question)}</button>`).join('')}</div><div class="ai-privacy"><b>Защита данных</b><span>Имена, телефоны клиентов и сотрудников не передаются. Доступ есть только у владельца и администраторов.</span></div></aside><section class="ai-chat"><div class="ai-chat-head"><div><span class="ai-online"></span><b>IceFresh AI</b><small>Помощник по управленческому учёту</small></div>${aiMessages.length ? '<button type="button" class="link" data-ai-reset>Очистить диалог</button>' : ''}</div><div class="ai-chat-log" aria-live="polite">${messages}${aiBusy ? '<article class="ai-message assistant loading"><div>AI</div><p><i></i><i></i><i></i></p></article>' : ''}</div>${aiError ? `<p class="ai-error" role="alert">${C.esc(aiError)}</p>` : ''}<form id="ai-form" class="ai-form"><label for="ai-question">Ваш вопрос</label><textarea id="ai-question" name="question" rows="3" minlength="2" maxlength="1800" required ${aiBusy ? 'disabled' : ''} placeholder="Например: какие остатки требуют внимания?"></textarea><button class="primary" type="submit" ${aiBusy ? 'disabled' : ''}>${aiBusy ? 'Анализирую…' : 'Спросить AI'}</button></form><p class="ai-disclaimer">AI может ошибаться. Перед оплатами, начислениями и бухгалтерскими решениями проверяйте исходные записи.</p></section></div>`;
+}
+
+async function askAi(question) {
+  const message = String(question || '').trim();
+  if (!manager || aiBusy || message.length < 2) return;
+  const history = aiMessages.slice(-6).map(item => ({ role: item.role, content: item.content.slice(0, 1000) }));
+  aiMessages.push({ role: 'user', content: message });
+  aiBusy = true;
+  aiError = '';
+  render();
+  try {
+    const { data: authData, error: authError } = await supabase.auth.getSession();
+    if (authError || !authData.session?.access_token) throw new Error('Сессия истекла. Войдите снова.');
+    const response = await fetch('/api/ai-assistant', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${authData.session.access_token}`
+      },
+      body: JSON.stringify({ message, history, context: aiBusinessContext() })
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || typeof result.reply !== 'string') throw new Error(result.error || 'Не удалось получить ответ AI‑ассистента.');
+    aiMessages.push({ role: 'assistant', content: result.reply.trim() });
+  } catch (error) {
+    aiError = friendlyError(error);
+  } finally {
+    aiBusy = false;
+    render();
+  }
+}
+
 const views = {
   dashboard: dashboardView,
   calendar: calendarView,
@@ -627,7 +747,8 @@ const views = {
   employees: employeesView,
   accruals: accrualsView,
   warehouse: warehouseView,
-  analytics: analyticsView
+  analytics: analyticsView,
+  ai: aiView
 };
 
 function render() {
@@ -641,6 +762,10 @@ function render() {
   $('#add').textContent = addLabels[section] || '＋ Добавить';
   $('#add').hidden = !addLabels[section] || (!manager && ['products', 'employees', 'accruals'].includes(section));
   document.querySelector('.sidebar').classList.remove('open');
+  if (section === 'ai') requestAnimationFrame(() => {
+    const log = $('.ai-chat-log');
+    if (log) log.scrollTop = log.scrollHeight;
+  });
 }
 
 const schemas = {
@@ -1104,6 +1229,17 @@ $('#app').onclick = async event => {
     go(target.dataset.go);
     return;
   }
+  const aiQuestion = event.target.closest('[data-ai-question]');
+  if (aiQuestion) {
+    await askAi(aiQuestion.dataset.aiQuestion);
+    return;
+  }
+  if (event.target.closest('[data-ai-reset]')) {
+    aiMessages = [];
+    aiError = '';
+    render();
+    return;
+  }
   const requestAction = event.target.closest('[data-request-status]');
   if (requestAction) {
     await updateWebsiteRequest(requestAction.dataset.requestId, requestAction.dataset.requestStatus);
@@ -1154,6 +1290,13 @@ $('#app').onclick = async event => {
     calendarCursor = amount === 0 ? new Date(new Date().getFullYear(), new Date().getMonth(), 1) : new Date(calendarCursor.getFullYear(), calendarCursor.getMonth() + amount, 1);
     render();
   }
+};
+
+$('#app').onsubmit = async event => {
+  if (!event.target.matches('#ai-form')) return;
+  event.preventDefault();
+  const form = new FormData(event.target);
+  await askAi(form.get('question'));
 };
 
 $('#app').onchange = async event => {
