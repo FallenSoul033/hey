@@ -1,7 +1,9 @@
 (function (globalScope) {
-  const PUBLIC_ROUTES = new Set(['login', 'register']);
+  const PUBLIC_SITE_ROUTES = new Set(['home']);
+  const AUTH_ROUTES = new Set(['login', 'register']);
   const APP_ROUTES = new Set([
     'dashboard',
+    'requests',
     'orders',
     'clients',
     'production',
@@ -18,17 +20,21 @@
       .split(/[?&]/, 1)[0]
       .trim()
       .toLowerCase();
-    return route || 'dashboard';
+    return route || 'home';
   }
 
   function resolve(requestedRoute, access) {
     const requested = String(requestedRoute || '').toLowerCase();
     const authenticated = Boolean(access?.authenticated && access?.active);
 
+    if (PUBLIC_SITE_ROUTES.has(requested)) {
+      return { screen: 'public', route: requested };
+    }
+
     if (!authenticated) {
       return {
         screen: 'auth',
-        route: PUBLIC_ROUTES.has(requested) ? requested : 'login'
+        route: AUTH_ROUTES.has(requested) ? requested : 'login'
       };
     }
 

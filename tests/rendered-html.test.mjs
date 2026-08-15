@@ -38,6 +38,9 @@ test("ships the configured Russian IceFresh application", async () => {
     readFile(new URL("manifest.webmanifest", root), "utf8"),
     readFile(new URL("_headers", root), "utf8"),
   ]);
+  assert.match(html, /Чистый лёд[\s\S]*для бизнеса и дома/);
+  assert.match(html, /Оставить заявку/);
+  assert.match(html, /Вход для сотрудников/);
   assert.match(html, /Добро пожаловать в IceFresh/);
   assert.match(html, /Данные защищены и синхронизируются/);
   assert.match(config, /https:\/\/ogjfqnbgauuhbmauioea\.supabase\.co/);
@@ -45,6 +48,30 @@ test("ships the configured Russian IceFresh application", async () => {
   assert.equal(JSON.parse(manifest).short_name, "IceFresh");
   assert.match(headers, /Content-Security-Policy:/);
   assert.match(headers, /frame-ancestors 'none'/);
+});
+
+test("keeps public enquiries separate from protected CRM records", async () => {
+  const root = new URL("../", import.meta.url);
+  const [app, routes, migration, edgeFunction] = await Promise.all([
+    readFile(new URL("public/app.js", root), "utf8"),
+    readFile(new URL("public/routes.js", root), "utf8"),
+    readFile(new URL("supabase/migrations/202608150001_website_requests.sql", root), "utf8"),
+    readFile(new URL("supabase/functions/public-order-request/index.ts", root), "utf8"),
+  ]);
+
+  assert.match(routes, /return route \|\| 'home'/);
+  assert.match(routes, /screen: 'public'/);
+  assert.match(app, /functions\/v1\/public-order-request/);
+  assert.match(app, /from\('website_requests'\)/);
+  assert.match(app, /if\(route\(\)!=='home'\)replaceRoute\('login'\)/);
+  assert.doesNotMatch(app, /service_role|sb_secret_/i);
+  assert.match(migration, /alter table public\.website_requests enable row level security/);
+  assert.match(migration, /revoke all privileges on table public\.website_requests from anon, authenticated/);
+  assert.match(migration, /grant select \(/);
+  assert.doesNotMatch(migration, /grant (?:select|insert|update|delete)[^;]* to anon/i);
+  assert.match(edgeFunction, /ALLOWED_ORIGINS/);
+  assert.match(edgeFunction, /RATE_LIMIT_PER_HOUR = 5/);
+  assert.match(edgeFunction, /SUPABASE_SERVICE_ROLE_KEY/);
 });
 
 test("routes static assets through the security-header worker", async () => {
