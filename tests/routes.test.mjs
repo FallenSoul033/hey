@@ -81,4 +81,12 @@ test("CRM routes remain protected while enquiries are available to staff", async
     structuredClone(routes.resolve("integrations", owner)),
     { screen: "app", route: "integrations" },
   );
+  assert.deepEqual(
+    structuredClone(routes.resolve("operations", staff)),
+    { screen: "app", route: "dashboard" },
+  );
+  assert.deepEqual(
+    structuredClone(routes.resolve("operations", admin)),
+    { screen: "app", route: "operations" },
+  );
 });

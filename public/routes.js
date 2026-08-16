@@ -13,10 +13,11 @@
     'accruals',
     'warehouse',
     'analytics',
+    'operations',
     'ai',
     'integrations'
   ]);
-  const MANAGER_ROUTES = new Set(['products', 'employees', 'accruals', 'analytics']);
+  const MANAGER_ROUTES = new Set(['products', 'employees', 'accruals', 'analytics', 'operations']);
   const OWNER_ROUTES = new Set(['integrations']);
 
   function parseHash(hash) {

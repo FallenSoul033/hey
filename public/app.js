@@ -2,7 +2,7 @@
 const C = IceCore;
 const R = IceRoutes;
 const SDK_VERSION = '2.111.0';
-const APP_VERSION = '11.0.0-alpha.1';
+const APP_VERSION = '12.0.0-alpha.1';
 const PRODUCT_IMAGE_BUCKET = 'product-images';
 const BUILT_IN_PRODUCT_PHOTOS = {
   cup250: '/assets/products/cup-250.webp',
@@ -32,7 +32,8 @@ function localDateTimeValue(date = new Date()) {
 function emptyData() {
   return {
     orders: [], clients: [], production: [], employees: [], accruals: [],
-    requests: [], products: [], schedule: [], members: [], invites: []
+    requests: [], products: [], schedule: [], members: [], invites: [],
+    inventoryLedger: [], financialLedger: [], operationEvents: [], notificationEvents: []
   };
 }
 
@@ -82,6 +83,7 @@ const navAll = [
   ['accruals', '₸', 'Начисления'],
   ['warehouse', '▦', 'Склад'],
   ['analytics', '↗', 'Аналитика'],
+  ['operations', '☷', 'Журнал операций'],
   ['ai', '◎', 'AI‑ассистент'],
   ['integrations', '⛓', 'Интеграции']
 ];
@@ -98,6 +100,7 @@ const titles = {
   accruals: ['Оплата труда', 'Начисления'],
   warehouse: ['Остатки', 'Склад'],
   analytics: ['Показатели', 'Аналитика'],
+  operations: ['Контроль', 'Журнал операций и уведомлений'],
   ai: ['Помощник руководителя', 'AI‑ассистент IceFresh'],
   integrations: ['Настройки владельца', 'Интеграции']
 };
@@ -145,6 +148,12 @@ const friendlyError = error => {
   if (/website request already processed/i.test(message)) return 'Эта заявка уже обработана.';
   if (/website request not found/i.test(message)) return 'Заявка не найдена или недоступна.';
   if (/active product not found/i.test(message)) return 'Товар отключён или больше недоступен.';
+  if (/insufficient stock/i.test(message)) return 'Недостаточно свободного остатка. Сначала добавьте производство или уменьшите заказ.';
+  if (/would make stock negative|reserved stock would become negative|cannot be reduced/i.test(message)) return 'Операция сделала бы остаток отрицательным. Проверьте связанные заказы и производство.';
+  if (/idempotency key reused/i.test(message)) return 'Форма изменилась после отправки. Закройте её и повторите операцию.';
+  if (/active employee not found/i.test(message)) return 'Сотрудник не найден или переведён в архив.';
+  if (/manager access required/i.test(message)) return 'Действие доступно владельцу или администратору.';
+  if (/ledger entries are immutable/i.test(message)) return 'Записи журнала нельзя переписать. Создайте корректирующую операцию.';
   if (/duplicate key|unique constraint/i.test(message)) return 'Такая запись уже существует.';
   if (/row-level security|permission denied/i.test(message)) return 'У вас нет прав для этого действия.';
   return message || 'Не удалось выполнить действие.';
@@ -519,7 +528,11 @@ async function loadAll() {
     supabase.from('schedule_items').select('*').order('scheduled_at'),
     supabase.from('profiles').select('id,organization_id,full_name,role,active,created_at').eq('organization_id', profile.organization_id).order('created_at'),
     manager ? supabase.from('accruals').select('*').order('accrual_date', { ascending: false }).order('created_at', { ascending: false }) : emptyResult,
-    manager ? supabase.from('organization_invites').select('id,token,role,employee_id,expires_at,accepted_by,accepted_at,created_at').order('created_at', { ascending: false }) : emptyResult
+    manager ? supabase.from('organization_invites').select('id,token,role,employee_id,expires_at,accepted_by,accepted_at,created_at').order('created_at', { ascending: false }) : emptyResult,
+    supabase.from('inventory_ledger').select('id,product_id,source_type,source_id,movement_type,category,quantity_delta,description,occurred_at').order('occurred_at', { ascending: false }).limit(2000),
+    manager ? supabase.from('financial_ledger').select('id,order_id,entry_type,amount_delta,description,occurred_at').order('occurred_at', { ascending: false }).limit(500) : emptyResult,
+    manager ? supabase.from('operation_events').select('id,severity,event_type,entity_type,entity_id,message,details,request_id,occurred_at').order('occurred_at', { ascending: false }).limit(500) : emptyResult,
+    manager ? supabase.from('notification_events').select('id,channel,recipient,event_type,aggregate_type,aggregate_id,status,attempts,next_attempt_at,last_error,created_at,sent_at').order('created_at', { ascending: false }).limit(500) : emptyResult
   ]);
   const firstError = results.find(result => result.error)?.error;
   if (firstError) {
@@ -539,6 +552,10 @@ async function loadAll() {
   data.members = results[8].data.map(row => ({ id: row.id, name: row.full_name, role: row.role, active: row.active, createdAt: row.created_at }));
   data.accruals = manager ? results[9].data.map(row => ({ id: row.id, date: row.accrual_date, employeeId: row.employee_id, employee: row.employee_name, description: row.description, qty: Number(row.quantity), rate: Number(row.rate), paid: row.paid })) : [];
   data.invites = manager ? results[10].data.map(row => ({ id: row.id, token: row.token, role: row.role, employeeId: row.employee_id, expiresAt: row.expires_at, acceptedBy: row.accepted_by, acceptedAt: row.accepted_at })) : [];
+  data.inventoryLedger = results[11].data.map(row => ({ id: row.id, product: row.product_id, sourceType: row.source_type, sourceId: row.source_id, movementType: row.movement_type, category: row.category, delta: Number(row.quantity_delta), description: row.description, occurredAt: row.occurred_at }));
+  data.financialLedger = manager ? results[12].data.map(row => ({ id: row.id, orderId: row.order_id, type: row.entry_type, delta: Number(row.amount_delta), description: row.description, occurredAt: row.occurred_at })) : [];
+  data.operationEvents = manager ? results[13].data.map(row => ({ id: row.id, severity: row.severity, type: row.event_type, entityType: row.entity_type, entityId: row.entity_id, message: row.message, details: row.details || {}, requestId: row.request_id, occurredAt: row.occurred_at })) : [];
+  data.notificationEvents = manager ? results[14].data.map(row => ({ id: row.id, channel: row.channel, recipient: row.recipient, type: row.event_type, aggregateType: row.aggregate_type, aggregateId: row.aggregate_id, status: row.status, attempts: row.attempts, nextAttemptAt: row.next_attempt_at, lastError: row.last_error, createdAt: row.created_at, sentAt: row.sent_at })) : [];
 
   document.querySelector('.brand small').textContent = organization.name;
   document.querySelector('.privacy').textContent = `● Онлайн · ${profile.full_name} · ${roleLabels[profile.role] || profile.role}`;
@@ -550,7 +567,7 @@ async function loadAll() {
 async function subscribe() {
   stopRealtime();
   realtime = supabase.channel(`icefresh-${profile.organization_id}`);
-  const tables = ['clients', 'employees', 'orders', 'production_entries', 'website_requests', 'products', 'schedule_items', ...(manager ? ['accruals', 'organization_invites'] : [])];
+  const tables = ['clients', 'employees', 'orders', 'production_entries', 'inventory_ledger', 'website_requests', 'products', 'schedule_items', ...(manager ? ['accruals', 'organization_invites', 'financial_ledger', 'operation_events', 'notification_events'] : [])];
   for (const tableName of tables) {
     realtime.on('postgres_changes', { event: '*', schema: 'public', table: tableName, filter: `organization_id=eq.${profile.organization_id}` }, scheduleRefresh);
   }
@@ -573,7 +590,7 @@ function scheduleRefresh() {
 function buildNav() {
   const allowed = navAll.filter(item => {
     if (item[0] === 'integrations') return owner;
-    return manager || !['products', 'employees', 'accruals', 'analytics'].includes(item[0]);
+    return manager || !['products', 'employees', 'accruals', 'analytics', 'operations'].includes(item[0]);
   });
   const newCount = data.requests.filter(request => request.status === 'Новая').length;
   $('#nav').innerHTML = allowed.map(item => `<button data-section="${item[0]}"><span>${item[1]}</span>${item[2]}${item[0] === 'requests' && newCount ? ` <b class="nav-count">${newCount}</b>` : ''}</button>`).join('');
@@ -667,6 +684,17 @@ function scheduleCompact(item) {
   return `<button class="schedule-compact type-${item.type}" data-edit-schedule="${item.id}"><span>${typeIcons[item.type] || '•'}</span><span><b>${C.esc(item.title)}</b><small>${dateTime(item.scheduledAt)}${item.client ? ` · ${C.esc(item.client)}` : ''}</small></span>${badge(item.status)}</button>`;
 }
 
+function ledgerInventory() {
+  return catalogue().map(product => {
+    const movements = data.inventoryLedger.filter(item => item.product === product.id);
+    const made = rounded(movements.filter(item => item.category === 'production').reduce((sum, item) => sum + item.delta, 0));
+    const sold = rounded(-movements.filter(item => item.category === 'order').reduce((sum, item) => sum + item.delta, 0));
+    const adjustments = rounded(movements.filter(item => item.category === 'adjustment').reduce((sum, item) => sum + item.delta, 0));
+    const stock = rounded(movements.reduce((sum, item) => sum + item.delta, 0));
+    return { ...product, made, sold, adjustments, stock };
+  });
+}
+
 function stockLevel(item) {
   if (item.stock < 0) return 'negative';
   if (item.minStock > 0 && item.stock <= item.minStock) return 'low';
@@ -681,7 +709,7 @@ function stockNotice(item) {
 }
 
 function dashboardView() {
-  const inventory = C.inventory(data.production, data.orders, catalogue());
+  const inventory = ledgerInventory();
   const newRequests = data.requests.filter(request => request.status === 'Новая').length;
   const requestAlert = newRequests ? `<button class="request-alert" data-go="requests"><span><b>${newRequests} ${newRequests === 1 ? 'новая заявка' : 'новых заявок'} с сайта</b><span>Посетители IceFresh ожидают обратной связи.</span></span><strong>Открыть →</strong></button>` : '';
   const upcoming = openScheduleItems().slice(0, 5);
@@ -695,23 +723,23 @@ function requestsView() {
 }
 
 function ordersView() {
-  return cards() + `<article class="panel">${table(['Дата', 'Клиент', 'Товар', 'Кол-во', 'Итого', 'Оплачено', 'Долг', 'Статус'], data.orders.map(order => {
+  return cards() + `<article class="panel">${table(['Дата', 'Клиент', 'Товар', 'Кол-во', 'Итого', 'Оплачено', 'Долг', 'Статус', ''], data.orders.map(order => {
     const value = C.calcOrder(order);
-    return `<tr><td>${order.date}</td><td><b>${C.esc(order.client)}</b></td><td>${C.esc(prod(order.product))}</td><td>${order.qty}</td><td>${C.money(value.total)}</td><td>${C.money(value.paid)}</td><td class="${value.debt ? 'danger' : ''}">${C.money(value.debt)}</td><td>${badge(order.status)}</td></tr>`;
+    return `<tr><td>${order.date}</td><td><b>${C.esc(order.client)}</b></td><td>${C.esc(prod(order.product))}</td><td>${order.qty}</td><td>${C.money(value.total)}</td><td>${C.money(value.paid)}</td><td class="${value.debt ? 'danger' : ''}">${C.money(value.debt)}</td><td>${badge(order.status)}</td><td><button class="link table-action" data-edit-order="${order.id}">Изменить</button></td></tr>`;
   }).join(''))}</article>`;
 }
 
 function clientsView() {
   const categories = ['Магазины', 'HoReCa', 'Частные клиенты', 'Оптовые клиенты'];
-  return `<div class="category-row">${categories.map(category => `<article><span>${category}</span><b>${data.clients.filter(client => client.category === category).length}</b></article>`).join('')}</div><article class="panel">${table(['Клиент', 'Категория', 'Телефон', 'Заказов', 'Выручка'], data.clients.map(client => {
+  return `<div class="category-row">${categories.map(category => `<article><span>${category}</span><b>${data.clients.filter(client => client.category === category).length}</b></article>`).join('')}</div><article class="panel">${table(['Клиент', 'Категория', 'Телефон', 'Заказов', 'Выручка', ''], data.clients.map(client => {
     const orders = data.orders.filter(order => order.clientId === client.id);
     const sum = orders.reduce((total, order) => total + C.calcOrder(order).total, 0);
-    return `<tr><td><b>${C.esc(client.name)}</b></td><td>${badge(client.category)}</td><td>${C.esc(client.phone)}</td><td>${orders.length}</td><td>${C.money(sum)}</td></tr>`;
+    return `<tr><td><b>${C.esc(client.name)}</b></td><td>${badge(client.category)}</td><td>${C.esc(client.phone)}</td><td>${orders.length}</td><td>${C.money(sum)}</td><td><button class="link table-action" data-edit-client="${client.id}">Изменить</button></td></tr>`;
   }).join(''))}</article>`;
 }
 
 function productionView() {
-  return `<article class="panel">${table(['Дата', 'Продукция', 'Количество', 'Сотрудник'], data.production.map(item => `<tr><td>${item.date}</td><td><b>${C.esc(prod(item.product))}</b></td><td>${item.qty} шт.</td><td>${C.esc(item.employee)}</td></tr>`).join(''))}</article>`;
+  return `<article class="panel">${table(['Дата', 'Продукция', 'Количество', 'Сотрудник', ''], data.production.map(item => `<tr><td>${item.date}</td><td><b>${C.esc(prod(item.product))}</b></td><td>${item.qty} шт.</td><td>${C.esc(item.employee)}</td><td><button class="link table-action" data-edit-production="${item.id}">Изменить</button></td></tr>`).join(''))}</article>`;
 }
 
 function productsView() {
@@ -747,8 +775,16 @@ function accrualsView() {
 }
 
 function warehouseView() {
-  const inventory = C.inventory(data.production, data.orders, catalogue());
-  return `<div class="product-cards">${inventory.map(item => `<article class="stock-card stock-${stockLevel(item)}"><div class="cube">❄</div><h3>${C.esc(item.name)}</h3><b class="stock-big ${stockLevel(item) !== 'ok' ? 'danger' : ''}">${item.stock} <small>${C.esc(item.unit)}</small></b><div class="stock-line"><span>Произведено <b>${item.made}</b></span><span>Отгружено <b>${item.sold}</b></span><span>Минимум <b>${item.minStock || 0}</b></span></div>${stockNotice(item) ? `<p class="alert">${C.esc(stockNotice(item))}</p>` : ''}</article>`).join('')}</div><p class="note">Остаток рассчитывается автоматически: произведено − отгружено по неотменённым заказам. Минимальный остаток настраивается в карточке товара.</p>`;
+  const inventory = ledgerInventory();
+  const adjustmentButton = owner ? '<button type="button" class="primary stock-adjust-button" data-stock-adjust>Корректировать остаток</button>' : '';
+  const recent = data.inventoryLedger.slice(0, 12);
+  return `<div class="warehouse-head"><div><p class="eyebrow">Append-only ledger</p><h2>Остатки из неизменяемого журнала</h2><p>Каждый выпуск, резерв заказа и ручная корректировка фиксируются отдельным движением.</p></div>${adjustmentButton}</div><div class="product-cards">${inventory.map(item => `<article class="stock-card stock-${stockLevel(item)}"><div class="cube">❄</div><h3>${C.esc(item.name)}</h3><b class="stock-big ${stockLevel(item) !== 'ok' ? 'danger' : ''}">${item.stock} <small>${C.esc(item.unit)}</small></b><div class="stock-line"><span>Произведено <b>${item.made}</b></span><span>Зарезервировано <b>${item.sold}</b></span><span>Корректировки <b>${item.adjustments}</b></span><span>Минимум <b>${item.minStock || 0}</b></span></div>${stockNotice(item) ? `<p class="alert">${C.esc(stockNotice(item))}</p>` : ''}</article>`).join('')}</div><article class="panel inventory-history"><div class="panel-head"><div><p class="eyebrow">Последние движения</p><h2>Журнал склада</h2></div></div>${table(['Дата', 'Товар', 'Источник', 'Изменение', 'Основание'], recent.map(item => `<tr><td>${dateTime(item.occurredAt)}</td><td><b>${C.esc(prod(item.product))}</b></td><td>${C.esc(inventoryMovementLabel(item))}</td><td class="${item.delta < 0 ? 'danger' : 'ok-text'}">${item.delta > 0 ? '+' : ''}${item.delta}</td><td>${C.esc(item.description || '—')}</td></tr>`).join(''))}</article><p class="note">Остаток — сумма движений. История не переписывается; отмена или исправление создаёт новое компенсирующее движение.</p>`;
+}
+
+function inventoryMovementLabel(item) {
+  if (item.category === 'production') return 'Производство';
+  if (item.category === 'order') return item.delta < 0 ? 'Резерв заказа' : 'Освобождение резерва';
+  return 'Ручная корректировка';
 }
 
 function analyticsView() {
@@ -756,6 +792,30 @@ function analyticsView() {
   const byProduct = catalogue().map(product => ({ name: product.name, total: data.orders.filter(order => order.product === product.id && order.status !== 'Отменён').reduce((sum, order) => sum + C.calcOrder(order).total, 0) }));
   const maximum = Math.max(1, ...byProduct.map(item => item.total));
   return `${cards()}<div class="grid2"><article class="panel"><h2>Продажи по ассортименту</h2><div class="bars">${byProduct.map(item => `<div><span>${C.esc(item.name)}</span><div><i style="width:${item.total / maximum * 100}%"></i></div><b>${C.money(item.total)}</b></div>`).join('')}</div></article><article class="panel"><h2>Финансовая сводка</h2><dl class="summary"><div><dt>Начисленная выручка</dt><dd>${C.money(value.sales)}</dd></div><div><dt>Поступившие оплаты</dt><dd>${C.money(value.paid)}</dd></div><div><dt>Дебиторская задолженность</dt><dd>${C.money(value.debt)}</dd></div><div><dt>Начисления сотрудникам</dt><dd>${C.money(value.wage)}</dd></div></dl><p class="note">Это управленческий учёт, не налоговая или бухгалтерская отчётность.</p></article></div>`;
+}
+
+function operationsView() {
+  const pending = data.notificationEvents.filter(item => item.status === 'pending').length;
+  const failed = data.notificationEvents.filter(item => ['failed', 'dead_letter'].includes(item.status)).length;
+  const saleDelta = data.financialLedger.filter(item => item.type === 'sale').reduce((sum, item) => sum + item.delta, 0);
+  const paymentDelta = data.financialLedger.filter(item => item.type === 'payment').reduce((sum, item) => sum + item.delta, 0);
+  const eventRows = data.operationEvents.slice(0, 100).map(item => `<tr><td>${dateTime(item.occurredAt)}</td><td>${operationSeverityBadge(item.severity)}</td><td><b>${C.esc(item.message)}</b><small class="cell-subtitle">${C.esc(item.type)}</small></td><td>${C.esc(item.entityType)}</td><td><code>${C.esc(String(item.requestId || '').slice(0, 8))}</code></td></tr>`).join('');
+  const notificationRows = data.notificationEvents.slice(0, 100).map(item => `<tr><td>${dateTime(item.createdAt)}</td><td>${C.esc(notificationChannelLabel(item.channel))}</td><td>${C.esc(item.recipient)}</td><td>${C.esc(item.type)}</td><td>${notificationStatusBadge(item.status)}</td><td>${item.attempts}</td><td>${C.esc(item.lastError || '—')}</td><td>${['failed', 'dead_letter'].includes(item.status) ? `<button type="button" class="link table-action" data-retry-notification="${item.id}">Повторить</button>` : '—'}</td></tr>`).join('');
+  return `<div class="metrics mini"><article><i>Операций</i><b>${data.operationEvents.length}</b><small>В загруженном журнале</small></article><article><i>В очереди</i><b>${pending}</b><small>Ожидают обработчика</small></article><article><i>Ошибок доставки</i><b class="${failed ? 'danger' : ''}">${failed}</b><small>Можно повторить вручную</small></article><article><i>Выручка / оплаты</i><b>${C.money(saleDelta)} / ${C.money(paymentDelta)}</b><small>По финансовому журналу</small></article></div><div class="operations-callout"><span>✓</span><div><h2>Контроль целостности включён</h2><p>Заказы и производство проходят серверную проверку остатков; складской и финансовый журналы нельзя переписать или удалить.</p></div></div><article class="panel operations-panel"><div class="panel-head"><div><p class="eyebrow">Observability</p><h2>События системы</h2></div></div>${table(['Дата', 'Уровень', 'Событие', 'Объект', 'Request ID'], eventRows)}</article><article class="panel operations-panel"><div class="panel-head"><div><p class="eyebrow">Outbox + retry</p><h2>Очередь уведомлений</h2></div></div>${table(['Дата', 'Канал', 'Получатель', 'Событие', 'Статус', 'Попыток', 'Последняя ошибка', ''], notificationRows)}<p class="note">Новые события заказа уже надёжно сохраняются для icefresh.kz@gmail.com. Фактическая отправка начнётся после подключения почтового провайдера; до этого статус остаётся «В очереди».</p></article>`;
+}
+
+function operationSeverityBadge(severity) {
+  const labels = { info: 'Информация', warning: 'Внимание', error: 'Ошибка' };
+  return `<span class="badge ${severity === 'error' ? 'red' : severity === 'warning' ? '' : 'green'}">${labels[severity] || C.esc(severity)}</span>`;
+}
+
+function notificationStatusBadge(status) {
+  const labels = { pending: 'В очереди', processing: 'Отправляется', sent: 'Отправлено', failed: 'Ошибка', dead_letter: 'Требует внимания' };
+  return `<span class="badge ${status === 'sent' ? 'green' : ['failed', 'dead_letter'].includes(status) ? 'red' : ''}">${labels[status] || C.esc(status)}</span>`;
+}
+
+function notificationChannelLabel(channel) {
+  return ({ email: 'Email', whatsapp: 'WhatsApp', webhook: 'Webhook' })[channel] || channel;
 }
 
 function calendarView() {
@@ -792,7 +852,7 @@ function rounded(value) {
 }
 
 function aiBusinessContext() {
-  const inventory = C.inventory(data.production, data.orders, catalogue());
+  const inventory = ledgerInventory();
   const productionByProduct = catalogue().map(product => ({
     product: product.name,
     quantity: rounded(data.production.filter(item => item.product === product.id).reduce((sum, item) => sum + item.qty, 0))
@@ -937,6 +997,7 @@ const views = {
   accruals: accrualsView,
   warehouse: warehouseView,
   analytics: analyticsView,
+  operations: operationsView,
   ai: aiView,
   integrations: integrationsView
 };
@@ -995,18 +1056,20 @@ const schemas = {
 };
 
 function genericField([name, label, type, initial, options = {}], record) {
-  let value = typeof initial === 'function' ? initial() : initial;
-  if (record) {
-    const recordValues = { name: record.name, role: record.role, phone: record.phone, active: record.active };
-    if (recordValues[name] !== undefined) value = recordValues[name];
-  }
+  const aliases = { product: 'product', qty: 'qty', employeeId: 'employeeId', clientId: 'clientId', date: 'date', price: 'price', paid: 'paid', status: 'status', name: 'name', category: 'category', phone: 'phone', role: 'role', active: 'active' };
+  const recordValue = record && aliases[name] ? record[aliases[name]] : undefined;
   const required = options.required === false ? '' : 'required';
   if (type === 'select') {
-    return `<label>${label}<select name="${name}" ${required}>${value.map(option => {
+    const choices = typeof initial === 'function' ? initial() : initial;
+    const firstChoice = choices[0];
+    const fallback = Array.isArray(firstChoice) ? firstChoice[0] : firstChoice;
+    const selectedValue = recordValue ?? fallback;
+    return `<label>${label}<select name="${name}" ${required}>${choices.map(option => {
       const pair = Array.isArray(option) ? option : [option, option];
-      return `<option value="${C.esc(pair[0])}">${C.esc(pair[1])}</option>`;
+      return `<option value="${C.esc(pair[0])}" ${String(pair[0]) === String(selectedValue) ? 'selected' : ''}>${C.esc(pair[1])}</option>`;
     }).join('')}</select></label>`;
   }
+  const value = recordValue ?? (typeof initial === 'function' ? initial() : initial);
   if (type === 'checkbox') return `<label class="check"><input name="${name}" type="checkbox" ${value ? 'checked' : ''}> ${label}</label>`;
   return `<label>${label}<input name="${name}" type="${type}" value="${C.esc(value)}" ${type === 'number' ? 'min="0" step="0.01"' : ''} ${required}></label>`;
 }
@@ -1032,6 +1095,7 @@ function openScheduleForm(item = null, dateKey = '') {
 }
 
 function openForm(record = null, dateKey = '') {
+  $('#form').dataset.idempotencyKey = crypto.randomUUID();
   if (section === 'products') {
     openProductForm(record);
     return;
@@ -1051,8 +1115,9 @@ function openForm(record = null, dateKey = '') {
     return;
   }
   editingRecord = record ? { type: section, id: record.id } : null;
-  const labels = { orders: 'Добавить заказ', clients: 'Добавить клиента', production: 'Записать производство', employees: record ? 'Изменить сотрудника' : 'Добавить сотрудника', accruals: 'Добавить начисление' };
-  $('#modal-title').textContent = labels[section];
+  const createLabels = { orders: 'Добавить заказ', clients: 'Добавить клиента', production: 'Записать производство', employees: 'Добавить сотрудника', accruals: 'Добавить начисление' };
+  const editLabels = { orders: 'Изменить заказ', clients: 'Изменить клиента', production: 'Изменить производство', employees: 'Изменить сотрудника', accruals: 'Изменить начисление' };
+  $('#modal-title').textContent = record ? editLabels[section] : createLabels[section];
   $('#fields').innerHTML = schema.map(field => genericField(field, record)).join('');
   if (section === 'employees' && record?.active) {
     $('#fields').insertAdjacentHTML('beforeend', `<div class="employee-form-actions"><button type="button" class="link danger" data-archive-employee="${record.id}">Перевести сотрудника в архив</button><small>Карточка и история начислений сохранятся.</small></div>`);
@@ -1062,6 +1127,18 @@ function openForm(record = null, dateKey = '') {
     const priceInput = $('#fields [name=price]');
     productSelect.onchange = () => { priceInput.value = String(activeProducts().find(product => product.id === productSelect.value)?.price || 0); };
   }
+  $('#modal').showModal();
+}
+
+function openInventoryAdjustmentForm() {
+  if (!owner) {
+    toast('Корректировка склада доступна только владельцу.');
+    return;
+  }
+  editingRecord = { type: 'inventory-adjustment', id: null };
+  $('#form').dataset.idempotencyKey = crypto.randomUUID();
+  $('#modal-title').textContent = 'Корректировать остаток';
+  $('#fields').innerHTML = `<div class="form-warning"><b>Это учётная операция</b><span>Исходная история не изменится. Система добавит отдельное движение с вашим основанием.</span></div><label>Товар<select name="product" required>${activeProducts().map(product => `<option value="${C.esc(product.id)}">${C.esc(product.name)}</option>`).join('')}</select></label><label>Изменение количества<input name="delta" type="number" step="0.01" required placeholder="Например, -2 или 5"><small>Плюс добавляет остаток, минус списывает. Итог не может стать отрицательным.</small></label><label>Основание корректировки<textarea name="reason" minlength="5" maxlength="500" rows="4" required placeholder="Например: фактический пересчёт склада 16.08.2026"></textarea></label>`;
   $('#modal').showModal();
 }
 
@@ -1137,6 +1214,19 @@ async function saveSchedule(form) {
 }
 
 async function saveRecord(form) {
+  if (editingRecord?.type === 'inventory-adjustment') {
+    const raw = Object.fromEntries(new FormData(form));
+    const delta = Number(raw.delta);
+    if (delta < 0 && !window.confirm(`Списать со склада ${Math.abs(delta)} единиц? История сохранится в журнале.`)) return false;
+    const { error } = await supabase.rpc('record_inventory_adjustment', {
+      p_idempotency_key: form.dataset.idempotencyKey,
+      p_product_id: String(raw.product),
+      p_quantity_delta: delta,
+      p_reason: String(raw.reason || '').trim()
+    });
+    if (error) throw error;
+    return true;
+  }
   if (section === 'products') return saveProduct(form);
   if (section === 'calendar') return saveSchedule(form);
   const raw = Object.fromEntries(new FormData(form));
@@ -1149,6 +1239,42 @@ async function saveRecord(form) {
     if (error) throw error;
     return;
   }
+  if (section === 'clients' && editingRecord) {
+    const { error } = await supabase.from('clients').update({ name: String(raw.name).trim(), category: raw.category, phone: String(raw.phone || '').trim() }).eq('id', editingRecord.id);
+    if (error) throw error;
+    return true;
+  }
+  if (section === 'orders') {
+    const client = data.clients.find(item => item.id === raw.clientId);
+    if (!client) throw new Error('Выберите клиента.');
+    const { error } = await supabase.rpc('save_order', {
+      p_idempotency_key: form.dataset.idempotencyKey,
+      p_order_id: editingRecord?.type === 'orders' ? editingRecord.id : null,
+      p_order_date: raw.date,
+      p_client_id: client.id,
+      p_product_id: raw.product,
+      p_quantity: raw.qty,
+      p_unit_price: raw.price,
+      p_paid_amount: raw.paid,
+      p_status: raw.status
+    });
+    if (error) throw error;
+    return true;
+  }
+  if (section === 'production') {
+    const employee = data.employees.find(item => item.id === raw.employeeId);
+    if (!employee) throw new Error('Выберите сотрудника.');
+    const { error } = await supabase.rpc('save_production_entry', {
+      p_idempotency_key: form.dataset.idempotencyKey,
+      p_entry_id: editingRecord?.type === 'production' ? editingRecord.id : null,
+      p_production_date: raw.date,
+      p_product_id: raw.product,
+      p_quantity: raw.qty,
+      p_employee_id: employee.id
+    });
+    if (error) throw error;
+    return true;
+  }
   const common = { organization_id: profile.organization_id, created_by: session.user.id };
   let tableName;
   let payload;
@@ -1159,16 +1285,6 @@ async function saveRecord(form) {
   if (section === 'employees') {
     tableName = 'employees';
     payload = { ...common, full_name: String(raw.name).trim(), position: String(raw.role).trim(), phone: String(raw.phone || '').trim(), active: raw.active };
-  }
-  if (section === 'orders') {
-    const client = data.clients.find(item => item.id === raw.clientId);
-    tableName = 'orders';
-    payload = { ...common, order_date: raw.date, client_id: client.id, client_name: client.name, product_id: raw.product, quantity: raw.qty, unit_price: raw.price, paid_amount: raw.paid, status: raw.status };
-  }
-  if (section === 'production') {
-    const employee = data.employees.find(item => item.id === raw.employeeId);
-    tableName = 'production_entries';
-    payload = { ...common, production_date: raw.date, product_id: raw.product, quantity: raw.qty, employee_id: employee.id, employee_name: employee.name };
   }
   if (section === 'accruals') {
     const employee = data.employees.find(item => item.id === raw.employeeId);
@@ -1251,6 +1367,19 @@ async function acceptWebsiteRequest(id, button) {
   await loadAll();
   render();
   toast('Клиент и заказ созданы, заявка принята');
+}
+
+async function retryNotification(id, button) {
+  button.disabled = true;
+  const { error } = await supabase.rpc('retry_notification', { p_notification_id: id });
+  if (error) {
+    button.disabled = false;
+    toast(friendlyError(error));
+    return;
+  }
+  await loadAll();
+  render();
+  toast('Уведомление возвращено в очередь');
 }
 
 async function archiveEmployee(id) {
@@ -1465,6 +1594,30 @@ $('#app').onclick = async event => {
     await revokeInvite(revoke.dataset.revokeInvite);
     return;
   }
+  const orderEdit = event.target.closest('[data-edit-order]');
+  if (orderEdit) {
+    openForm(data.orders.find(item => item.id === orderEdit.dataset.editOrder));
+    return;
+  }
+  const clientEdit = event.target.closest('[data-edit-client]');
+  if (clientEdit) {
+    openForm(data.clients.find(item => item.id === clientEdit.dataset.editClient));
+    return;
+  }
+  const productionEdit = event.target.closest('[data-edit-production]');
+  if (productionEdit) {
+    openForm(data.production.find(item => item.id === productionEdit.dataset.editProduction));
+    return;
+  }
+  if (event.target.closest('[data-stock-adjust]')) {
+    openInventoryAdjustmentForm();
+    return;
+  }
+  const retry = event.target.closest('[data-retry-notification]');
+  if (retry) {
+    await retryNotification(retry.dataset.retryNotification, retry);
+    return;
+  }
   const employeeEdit = event.target.closest('[data-edit-employee]');
   if (employeeEdit) {
     openForm(data.employees.find(item => item.id === employeeEdit.dataset.editEmployee));
@@ -1526,7 +1679,8 @@ $('#form').onsubmit = async event => {
   submit.disabled = true;
   const wasEditing = Boolean(editingRecord);
   try {
-    await saveRecord(event.target);
+    const saved = await saveRecord(event.target);
+    if (saved === false) return;
     $('#modal').close();
     await loadAll();
     render();

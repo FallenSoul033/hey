@@ -1,7 +1,7 @@
 {
   "name": "IceFresh",
-  "version": "11.0.0-alpha.1",
-  "release": "audit-p0-foundation",
+  "version": "12.0.0-alpha.1",
+  "release": "atomic-ledger-outbox",
   "status": "draft",
   "published": false
 }
