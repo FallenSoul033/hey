@@ -18,10 +18,21 @@ const owner = { authenticated: true, onboarded: true, role: "owner", active: tru
 test("the empty URL is the public IceFresh site", async () => {
   const routes = await loadRoutes();
   assert.equal(routes.parseHash(""), "home");
+  assert.equal(routes.parseLocation("/", ""), "home");
   assert.deepEqual(
     structuredClone(routes.resolve("home", guest)),
     { screen: "public", route: "home" },
   );
+});
+
+test("clean CRM URLs and legacy hash links resolve to the same protected route", async () => {
+  const routes = await loadRoutes();
+  assert.equal(routes.parseLocation("/app/orders", ""), "orders");
+  assert.equal(routes.parseLocation("/app", ""), "dashboard");
+  assert.equal(routes.parseLocation("/", "#/orders"), "orders");
+  assert.equal(routes.pathFor("orders"), "/app/orders");
+  assert.equal(routes.pathFor("login"), "/app/login");
+  assert.equal(routes.pathFor("home"), "/");
 });
 
 test("CRM routes remain protected while enquiries are available to staff", async () => {

@@ -2,12 +2,12 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-async function render() {
+async function render(pathname = "/") {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
   workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
   const { default: worker } = await import(workerUrl.href);
   return worker.fetch(
-    new Request("http://localhost/", { headers: { accept: "text/html" } }),
+    new Request(`http://localhost${pathname}`, { headers: { accept: "text/html" } }),
     {
       ASSETS: {
         fetch: async (request) =>
@@ -28,15 +28,28 @@ test("serves the IceFresh PWA shell through the security worker", async () => {
   assert.equal(await response.text(), "IceFresh application shell");
   assert.equal(response.headers.get("x-frame-options"), "DENY");
   assert.match(response.headers.get("content-security-policy"), /frame-ancestors 'none'/);
+  assert.equal(response.headers.get("x-robots-tag"), "index, follow");
+});
+
+test("serves direct clean CRM routes without indexing them", async () => {
+  const response = await render("/app/orders");
+  assert.equal(response.status, 200);
+  assert.equal(await response.text(), "IceFresh application shell");
+  assert.equal(response.headers.get("x-robots-tag"), "noindex, nofollow");
+  assert.match(response.headers.get("cache-control"), /no-store/);
 });
 
 test("ships the configured Russian IceFresh application", async () => {
   const root = new URL("../public/", import.meta.url);
-  const [html, config, manifest, headers] = await Promise.all([
+  const [html, config, manifest, headers, serviceWorker, robots, sitemap, version] = await Promise.all([
     readFile(new URL("app-shell.html", root), "utf8"),
     readFile(new URL("config.js", root), "utf8"),
     readFile(new URL("manifest.webmanifest", root), "utf8"),
     readFile(new URL("_headers", root), "utf8"),
+    readFile(new URL("sw.js", root), "utf8"),
+    readFile(new URL("robots.txt", root), "utf8"),
+    readFile(new URL("sitemap.xml", root), "utf8"),
+    readFile(new URL("version.json", root), "utf8"),
   ]);
   assert.match(html, /Чистый лёд[\s\S]*для бизнеса и дома/);
   assert.match(html, /Оставить заявку/);
@@ -48,11 +61,26 @@ test("ships the configured Russian IceFresh application", async () => {
   assert.match(html, /Вход для сотрудников/);
   assert.match(html, /Добро пожаловать в IceFresh/);
   assert.match(html, /Данные защищены и синхронизируются/);
+  assert.match(html, /id="network-banner"/);
+  assert.match(html, /id="pwa-update"/);
+  assert.match(html, /id="global-search"/);
+  assert.match(html, /id="app-version"/);
+  assert.match(html, /href="\/manifest\.webmanifest"/);
+  assert.match(html, /src="\/app\.js"/);
   assert.match(config, /https:\/\/ogjfqnbgauuhbmauioea\.supabase\.co/);
   assert.doesNotMatch(config, /sb_secret_|service_role\s*:/i);
   assert.equal(JSON.parse(manifest).short_name, "IceFresh");
   assert.match(headers, /Content-Security-Policy:/);
   assert.match(headers, /frame-ancestors 'none'/);
+  assert.match(serviceWorker, /SKIP_WAITING/);
+  assert.match(serviceWorker, /\/api\//);
+  assert.match(serviceWorker, /isCacheableStatic/);
+  assert.match(serviceWorker, /if \(!isCacheableStatic\(url\.pathname\)\) return/);
+  assert.doesNotMatch(serviceWorker, /install[\s\S]{0,300}skipWaiting\(\)/);
+  assert.match(robots, /Disallow: \/app\//);
+  assert.match(robots, /Sitemap: https:\/\/icefresh\.kz\/sitemap\.xml/);
+  assert.match(sitemap, /<loc>https:\/\/icefresh\.kz\/<\/loc>/);
+  assert.equal(JSON.parse(version).version, "11.0.0-alpha.1");
 });
 
 test("keeps public enquiries separate from protected CRM records", async () => {

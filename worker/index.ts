@@ -25,14 +25,27 @@ const SECURITY_HEADERS: Record<string, string> = {
   "Referrer-Policy": "no-referrer",
   "X-Frame-Options": "DENY",
   "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
-  "Content-Security-Policy": "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://cdn.jsdelivr.net; img-src 'self' data:; style-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+  "Content-Security-Policy": "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://cdn.jsdelivr.net; img-src 'self' data: https://*.supabase.co; style-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
 };
 
-function secure(response: Response, noCache = false): Response {
+function secure(response: Response, cacheControl?: string, robotsTag?: string): Response {
   const headers = new Headers(response.headers);
   for (const [name, value] of Object.entries(SECURITY_HEADERS)) headers.set(name, value);
-  if (noCache) headers.set("Cache-Control", "no-cache");
+  if (cacheControl) headers.set("Cache-Control", cacheControl);
+  if (robotsTag) headers.set("X-Robots-Tag", robotsTag);
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
+async function applicationShell(request: Request, env: Env, internal: boolean): Promise<Response> {
+  const shellRequest = new Request(new URL("/app-shell.html", request.url), {
+    method: "GET",
+    headers: request.headers,
+  });
+  return secure(
+    await env.ASSETS.fetch(shellRequest),
+    internal ? "no-store" : "no-cache",
+    internal ? "noindex, nofollow" : "index, follow",
+  );
 }
 
 // Image security config. SVG sources with .svg extension auto-skip the
@@ -46,15 +59,15 @@ const worker = {
     const url = new URL(request.url);
 
     if (url.pathname === "/api/ai-assistant") {
-      return secure(await handleAiAssistant(request, env), true);
+      return secure(await handleAiAssistant(request, env), "no-store");
     }
 
     if (url.pathname === "/" || url.pathname === "/index.html") {
-      const shellRequest = new Request(new URL("/app-shell.html", request.url), {
-        method: "GET",
-        headers: request.headers,
-      });
-      return secure(await env.ASSETS.fetch(shellRequest), true);
+      return applicationShell(request, env, false);
+    }
+
+    if (url.pathname === "/app" || url.pathname.startsWith("/app/")) {
+      return applicationShell(request, env, true);
     }
 
     if (url.pathname === "/_vinext/image") {
@@ -68,8 +81,9 @@ const worker = {
       }, allowedWidths));
     }
 
-    if (/\.(?:html|css|js|svg|webmanifest)$/.test(url.pathname) || url.pathname.startsWith("/assets/")) {
-      return secure(await env.ASSETS.fetch(request), url.pathname === "/sw.js" || url.pathname === "/config.js");
+    if (/\.(?:html|css|js|json|svg|txt|xml|webmanifest)$/.test(url.pathname) || url.pathname.startsWith("/assets/")) {
+      const noCache = ["/sw.js", "/config.js", "/version.json"].includes(url.pathname);
+      return secure(await env.ASSETS.fetch(request), noCache ? "no-cache" : undefined);
     }
 
     return secure(await handler.fetch(request, env, ctx));

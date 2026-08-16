@@ -28,6 +28,29 @@
     return route || 'home';
   }
 
+  function parseLocation(pathname, hash) {
+    const legacyHash = String(hash || '');
+    if (/^#\//.test(legacyHash)) return parseHash(legacyHash);
+    const cleanPath = String(pathname || '/')
+      .split(/[?#]/, 1)[0]
+      .replace(/\/{2,}/g, '/')
+      .replace(/\/$/, '') || '/';
+    if (cleanPath === '/' || cleanPath === '/index.html') return 'home';
+    if (cleanPath === '/app') return 'dashboard';
+    if (cleanPath.startsWith('/app/')) {
+      const segment = cleanPath.slice(5).split('/', 1)[0].trim().toLowerCase();
+      return segment || 'dashboard';
+    }
+    return 'home';
+  }
+
+  function pathFor(route) {
+    const requested = String(route || '').trim().toLowerCase();
+    if (requested === 'home') return '/';
+    if (AUTH_ROUTES.has(requested) || APP_ROUTES.has(requested)) return `/app/${requested}`;
+    return '/app/dashboard';
+  }
+
   function resolve(requestedRoute, access) {
     const requested = String(requestedRoute || '').toLowerCase();
     const authenticated = Boolean(access?.authenticated && access?.active);
@@ -57,5 +80,5 @@
     return { screen: 'app', route };
   }
 
-  globalScope.IceRoutes = Object.freeze({ parseHash, resolve });
+  globalScope.IceRoutes = Object.freeze({ parseHash, parseLocation, pathFor, resolve });
 })(typeof window === 'undefined' ? globalThis : window);

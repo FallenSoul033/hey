@@ -2,11 +2,12 @@
 const C = IceCore;
 const R = IceRoutes;
 const SDK_VERSION = '2.111.0';
+const APP_VERSION = '11.0.0-alpha.1';
 const PRODUCT_IMAGE_BUCKET = 'product-images';
 const BUILT_IN_PRODUCT_PHOTOS = {
-  cup250: 'assets/products/cup-250.webp',
-  bag1: 'assets/products/bag-1kg.webp',
-  bag2: 'assets/products/bag-2kg.webp'
+  cup250: '/assets/products/cup-250.webp',
+  bag1: '/assets/products/bag-1kg.webp',
+  bag2: '/assets/products/bag-2kg.webp'
 };
 const PRODUCT_IMAGE_TYPES = new Map([
   ['image/jpeg', 'jpg'],
@@ -56,6 +57,9 @@ let data = emptyData();
 let aiMessages = [];
 let aiBusy = false;
 let aiError = '';
+let waitingServiceWorker = null;
+let serviceWorkerReloading = false;
+let wasOffline = !navigator.onLine;
 
 const INTEGRATION_DETAILS = Object.freeze({
   provider: 'OpenAI',
@@ -98,6 +102,16 @@ const titles = {
   integrations: ['Настройки владельца', 'Интеграции']
 };
 
+const ADD_LABELS = {
+  orders: '＋ Заказ',
+  clients: '＋ Клиент',
+  production: '＋ Производство',
+  products: '＋ Товар',
+  employees: '＋ Сотрудник',
+  accruals: '＋ Начисление',
+  calendar: '＋ Событие'
+};
+
 const roleLabels = { owner: 'Владелец', admin: 'Администратор', staff: 'Сотрудник', pending: 'Ожидает подключения' };
 const typeIcons = { shipment: '🚚', commitment: '✓', production: '❄', other: '•' };
 
@@ -135,6 +149,61 @@ const friendlyError = error => {
   if (/row-level security|permission denied/i.test(message)) return 'У вас нет прав для этого действия.';
   return message || 'Не удалось выполнить действие.';
 };
+
+function showFatalError(error) {
+  const message = error?.message || String(error || '');
+  if (/ResizeObserver loop/i.test(message)) return;
+  console.error('IceFresh runtime error', error);
+  $('#fatal-error').hidden = false;
+}
+
+function showPwaUpdate(worker) {
+  waitingServiceWorker = worker;
+  $('#pwa-update').hidden = false;
+}
+
+async function setupPwa() {
+  if (!('serviceWorker' in navigator)) return;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (serviceWorkerReloading) return;
+    serviceWorkerReloading = true;
+    location.reload();
+  });
+  try {
+    const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+    if (registration.waiting && navigator.serviceWorker.controller) showPwaUpdate(registration.waiting);
+    registration.addEventListener('updatefound', () => {
+      const installing = registration.installing;
+      if (!installing) return;
+      installing.addEventListener('statechange', () => {
+        if (installing.state === 'installed' && navigator.serviceWorker.controller) showPwaUpdate(installing);
+      });
+    });
+  } catch (error) {
+    console.warn('IceFresh PWA registration failed', error);
+  }
+}
+
+function updateNetworkState() {
+  const offline = !navigator.onLine;
+  $('#network-banner').hidden = !offline;
+  if (offline && document.body.classList.contains('app-ready')) setSync('Нет сети', 'bad');
+  if (!offline && wasOffline) {
+    toast('Соединение восстановлено');
+    if (document.body.classList.contains('app-ready')) setSync('Соединение восстановлено', 'ok');
+  }
+  wasOffline = offline;
+}
+
+async function loadPublicVersion() {
+  try {
+    const response = await fetch('/version.json', { cache: 'no-store' });
+    const version = response.ok ? await response.json() : null;
+    $('#app-version').textContent = `Версия ${version?.version || APP_VERSION}`;
+  } catch {
+    $('#app-version').textContent = `Версия ${APP_VERSION}`;
+  }
+}
 
 function normalizeProduct(product) {
   return {
@@ -179,8 +248,15 @@ function updatePublicEntry() {
   const ready = Boolean(session && profile?.active && profile.organization_id && profile.role !== 'pending');
   document.querySelectorAll('.staff-login').forEach(link => {
     link.textContent = ready ? 'Рабочая панель' : 'Вход для сотрудников';
-    link.href = ready ? '#/dashboard' : '#/login';
+    link.href = ready ? R.pathFor('dashboard') : R.pathFor('login');
   });
+}
+
+function updateRobots(target) {
+  const publicScreen = target === 'public';
+  const robots = $('#robots-meta');
+  if (robots) robots.content = publicScreen ? 'index,follow' : 'noindex,nofollow';
+  document.documentElement.dataset.screen = target;
 }
 
 function showOnly(target) {
@@ -189,25 +265,33 @@ function showOnly(target) {
   $('#onboarding').hidden = target !== 'onboarding';
   document.body.classList.toggle('app-ready', target === 'app');
   document.body.classList.toggle('public-ready', target === 'public');
+  $('#global-search-results').hidden = true;
+  $('#global-search').setAttribute('aria-expanded', 'false');
+  updateRobots(target);
 }
 
 function route() {
-  return R.parseHash(location.hash);
+  return R.parseLocation(location.pathname, location.hash);
 }
 
 function replaceRoute(next) {
-  history.replaceState(null, '', `${location.pathname}${location.search}#/${next}`);
+  history.replaceState(null, '', R.pathFor(next));
 }
 
 function go(next) {
-  const hash = `#/${next}`;
-  if (location.hash === hash) applyRoute();
-  else location.hash = hash;
+  const path = R.pathFor(next);
+  if (location.pathname === path && !location.hash) applyRoute();
+  else {
+    history.pushState(null, '', path);
+    applyRoute();
+  }
 }
 
 function captureInviteToken() {
-  const query = location.hash.split('?')[1] || '';
-  const token = new URLSearchParams(query).get('invite') || '';
+  const legacyQuery = location.hash.split('?')[1] || '';
+  const token = new URLSearchParams(location.search).get('invite')
+    || new URLSearchParams(legacyQuery).get('invite')
+    || '';
   if (/^[0-9a-f-]{36}$/i.test(token)) sessionStorage.setItem('icefresh-invite', token);
   const saved = sessionStorage.getItem('icefresh-invite') || '';
   const field = $('#join-org [name=invite_token]');
@@ -244,7 +328,10 @@ function applyRoute() {
   updatePublicEntry();
   const requested = route();
   const decision = R.resolve(requested, access());
-  if (decision.route !== requested) replaceRoute(decision.route);
+  const expectedPath = R.pathFor(decision.route);
+  if (decision.route !== requested || location.hash.startsWith('#/') || location.pathname !== expectedPath) {
+    replaceRoute(decision.route);
+  }
   if (decision.screen === 'public') {
     showOnly('public');
     renderPublicCatalogue();
@@ -279,6 +366,9 @@ function resetIdentity() {
 }
 
 async function init() {
+  setupPwa();
+  updateNetworkState();
+  loadPublicVersion();
   $('#logo').src = $('#auth-logo').src = document.querySelector('.onboarding-logo').src = window.ICEFRESH_LOGO;
   document.querySelectorAll('.public-logo').forEach(element => { element.src = window.ICEFRESH_LOGO; });
   $('#public-order-form [name=started_at]').value = String(Date.now());
@@ -328,7 +418,6 @@ async function init() {
     showMessage('#auth-message', `Не удалось подключиться: ${friendlyError(error)}`, true);
     showOnly('auth');
   }
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js');
 }
 
 async function loadPublicCatalogue() {
@@ -503,13 +592,68 @@ function cards() {
   return `<div class="metrics"><article><i>Продажи</i><b>${C.money(value.sales)}</b><small>${value.orders} активных заказов</small></article><article><i>Получено</i><b>${C.money(value.paid)}</b><small class="ok">Оплаченная сумма</small></article><article><i>Дебиторка</i><b>${C.money(value.debt)}</b><small class="warn">Ожидается оплата</small></article>${manager ? `<article><i>Начисления</i><b>${C.money(value.wage)}</b><small>За весь период</small></article>` : '<article><i>Статус</i><b class="online-big">Онлайн</b><small>Общая база обновляется</small></article>'}</div>`;
 }
 
-const empty = text => `<div class="empty">${C.esc(text)}</div>`;
+const empty = (text, action = '', targetSection = section) => `<div class="empty"><span aria-hidden="true">◇</span><b>${C.esc(text)}</b>${action ? `<button type="button" class="ghost" data-empty-route="${C.esc(targetSection)}">${C.esc(action)}</button>` : ''}</div>`;
 const badge = status => `<span class="badge ${['Выполнен', 'Выполнено', 'Оплачено'].includes(status) ? 'green' : ['Отменён', 'Отменено'].includes(status) ? 'red' : ''}">${C.esc(status)}</span>`;
 const requestBadge = status => `<span class="badge ${status === 'Принята' ? 'green' : status === 'Закрыта' ? 'red' : ''}">${C.esc(status)}</span>`;
 const dateTime = value => new Intl.DateTimeFormat('ru-RU', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value));
 
 function table(headers, rows) {
-  return `<div class="table-wrap"><table><thead><tr>${headers.map(header => `<th>${header}</th>`).join('')}</tr></thead><tbody>${rows || `<tr><td colspan="${headers.length}">${empty('Записей пока нет')}</td></tr>`}</tbody></table></div>`;
+  return `<div class="table-wrap"><table><thead><tr>${headers.map(header => `<th>${header}</th>`).join('')}</tr></thead><tbody>${rows || `<tr><td colspan="${headers.length}">${empty('Записей пока нет', ADD_LABELS[section])}</td></tr>`}</tbody></table></div>`;
+}
+
+function globalSearchEntries() {
+  const entries = [];
+  const add = (routeName, type, title, subtitle, searchText) => entries.push({
+    route: routeName,
+    type,
+    title: String(title || ''),
+    subtitle: String(subtitle || ''),
+    searchText: String(searchText || '').toLocaleLowerCase('ru-RU')
+  });
+  data.orders.forEach(order => add(
+    'orders', 'Заказ', order.client || `Заказ ${order.id}`,
+    `${prod(order.product)} · ${order.status}`,
+    `${order.id} ${order.client} ${prod(order.product)} ${order.status}`
+  ));
+  data.clients.forEach(client => add(
+    'clients', 'Клиент', client.name, `${client.category} · ${client.phone || 'телефон не указан'}`,
+    `${client.id} ${client.name} ${client.category} ${client.phone}`
+  ));
+  data.requests.forEach(request => add(
+    'requests', 'Заявка сайта', request.name, `${request.phone} · ${request.status}`,
+    `${request.id} ${request.name} ${request.phone} ${prod(request.product)} ${request.status}`
+  ));
+  data.production.forEach(item => add(
+    'production', 'Производство', prod(item.product), `${item.date} · ${item.qty} шт.`,
+    `${item.id} ${item.date} ${prod(item.product)} ${item.employee}`
+  ));
+  catalogue().forEach(product => add(
+    manager ? 'products' : 'warehouse', 'Товар', product.name, product.weight || product.unit,
+    `${product.id} ${product.name} ${product.weight} ${product.description}`
+  ));
+  if (manager) data.employees.forEach(employee => add(
+    'employees', 'Сотрудник', employee.name, `${employee.role} · ${employee.phone || 'телефон не указан'}`,
+    `${employee.id} ${employee.name} ${employee.role} ${employee.phone}`
+  ));
+  return entries;
+}
+
+function renderGlobalSearch(query) {
+  const input = $('#global-search');
+  const panel = $('#global-search-results');
+  const normalized = String(query || '').trim().toLocaleLowerCase('ru-RU');
+  if (normalized.length < 2 || !appLoaded) {
+    panel.hidden = true;
+    input.setAttribute('aria-expanded', 'false');
+    panel.innerHTML = '';
+    return;
+  }
+  const results = globalSearchEntries().filter(entry => entry.searchText.includes(normalized)).slice(0, 12);
+  panel.innerHTML = results.length
+    ? results.map(result => `<button type="button" data-search-route="${result.route}"><span>${C.esc(result.type)}</span><b>${C.esc(result.title)}</b><small>${C.esc(result.subtitle)}</small></button>`).join('')
+    : `<div class="search-empty"><b>Ничего не найдено</b><span>Проверьте запрос или введите телефон, название либо номер записи.</span></div>`;
+  panel.hidden = false;
+  input.setAttribute('aria-expanded', 'true');
 }
 
 function openScheduleItems() {
@@ -541,7 +685,7 @@ function dashboardView() {
   const newRequests = data.requests.filter(request => request.status === 'Новая').length;
   const requestAlert = newRequests ? `<button class="request-alert" data-go="requests"><span><b>${newRequests} ${newRequests === 1 ? 'новая заявка' : 'новых заявок'} с сайта</b><span>Посетители IceFresh ожидают обратной связи.</span></span><strong>Открыть →</strong></button>` : '';
   const upcoming = openScheduleItems().slice(0, 5);
-  return `${requestAlert}${cards()}<div class="grid2"><article class="panel"><div class="panel-head"><div><p class="eyebrow">Актуальные данные</p><h2>Последние заказы</h2></div><button class="link" data-go="orders">Все заказы →</button></div>${table(['Клиент', 'Товар', 'Сумма', 'Статус'], data.orders.slice(0, 5).map(order => `<tr><td><b>${C.esc(order.client)}</b></td><td>${C.esc(prod(order.product))} × ${order.qty}</td><td>${C.money(C.calcOrder(order).total)}</td><td>${badge(order.status)}</td></tr>`).join(''))}</article><article class="panel"><div class="panel-head"><div><p class="eyebrow">План</p><h2>Ближайшие отгрузки и обязательства</h2></div><button class="link" data-go="calendar">Календарь →</button></div><div class="upcoming-list">${upcoming.map(item => scheduleCompact(item)).join('') || empty('Ближайших событий нет')}</div></article></div><article class="panel dashboard-stock"><div class="panel-head"><div><p class="eyebrow">Остатки</p><h2>Склад готовой продукции</h2></div><button class="link" data-go="warehouse">Подробнее →</button></div><div class="stocks">${inventory.map(item => `<div class="stock-row stock-${stockLevel(item)}"><span>${C.esc(item.name)}<small>${item.made} произведено · ${item.sold} отгружено${stockNotice(item) ? ` · ${C.esc(stockNotice(item))}` : ''}</small></span><b class="${stockLevel(item) !== 'ok' ? 'danger' : ''}">${item.stock} ${C.esc(item.unit)}</b></div>`).join('')}</div></article>`;
+  return `${requestAlert}${cards()}<div class="grid2"><article class="panel"><div class="panel-head"><div><p class="eyebrow">Актуальные данные</p><h2>Последние заказы</h2></div><button class="link" data-go="orders">Все заказы →</button></div>${table(['Клиент', 'Товар', 'Сумма', 'Статус'], data.orders.slice(0, 5).map(order => `<tr><td><b>${C.esc(order.client)}</b></td><td>${C.esc(prod(order.product))} × ${order.qty}</td><td>${C.money(C.calcOrder(order).total)}</td><td>${badge(order.status)}</td></tr>`).join(''))}</article><article class="panel"><div class="panel-head"><div><p class="eyebrow">План</p><h2>Ближайшие отгрузки и обязательства</h2></div><button class="link" data-go="calendar">Календарь →</button></div><div class="upcoming-list">${upcoming.map(item => scheduleCompact(item)).join('') || empty('Ближайших событий нет', ADD_LABELS.calendar, 'calendar')}</div></article></div><article class="panel dashboard-stock"><div class="panel-head"><div><p class="eyebrow">Остатки</p><h2>Склад готовой продукции</h2></div><button class="link" data-go="warehouse">Подробнее →</button></div><div class="stocks">${inventory.map(item => `<div class="stock-row stock-${stockLevel(item)}"><span>${C.esc(item.name)}<small>${item.made} произведено · ${item.sold} отгружено${stockNotice(item) ? ` · ${C.esc(stockNotice(item))}` : ''}</small></span><b class="${stockLevel(item) !== 'ok' ? 'danger' : ''}">${item.stock} ${C.esc(item.unit)}</b></div>`).join('')}</div></article>`;
 }
 
 function requestsView() {
@@ -577,7 +721,7 @@ function productsView() {
   return `<div class="admin-intro"><div><span class="admin-icon">◇</span><div><h2>Каталог IceFresh</h2><p>Добавляйте товары, цены и фотографии. Отметка «Показывать клиентам» автоматически выводит товар на главную страницу.</p></div></div><div class="admin-stats"><span><b>${activeCount}</b> активных</span><span><b>${publicCount}</b> на сайте</span></div></div><div class="admin-product-grid">${products.map(product => {
     const photo = productPhotoUrl(product);
     return `<article class="admin-product-card ${product.active ? '' : 'is-inactive'}">${photo ? `<img src="${C.esc(photo)}" alt="${C.esc(product.name)}">` : `<div class="admin-product-placeholder">❄<small>${C.esc(product.weight || 'IceFresh')}</small></div>`}<div class="admin-product-body"><div class="card-statuses"><span class="status-pill ${product.active ? 'on' : 'off'}">${product.active ? 'Активен' : 'Отключён'}</span><span class="status-pill ${product.publicVisible ? 'public' : ''}">${product.publicVisible ? 'На сайте' : 'Только в CRM'}</span></div><h3>${C.esc(product.name)}</h3><p>${C.esc(product.description || 'Описание не добавлено')}</p><dl><div><dt>Формат</dt><dd>${C.esc(product.weight || '—')}</dd></div><div><dt>Цена по умолчанию</dt><dd>${C.money(product.price)}</dd></div><div><dt>Минимальный остаток</dt><dd>${product.minStock} ${C.esc(product.unit)}</dd></div><div><dt>Единица</dt><dd>${C.esc(product.unit)}</dd></div></dl><button class="ghost card-edit" data-edit-product="${product.id}">Изменить товар</button></div></article>`;
-  }).join('') || empty('Добавьте первый товар')}</div><p class="note">Отключённые товары остаются в истории заказов и склада, но их нельзя выбрать в новых операциях.</p>`;
+  }).join('') || empty('Добавьте первый товар', ADD_LABELS.products)}</div><p class="note">Отключённые товары остаются в истории заказов и склада, но их нельзя выбрать в новых операциях.</p>`;
 }
 
 function memberControls(member) {
@@ -590,7 +734,7 @@ function memberControls(member) {
 function employeesView() {
   const activeInvites = data.invites.filter(invite => !invite.acceptedAt && new Date(invite.expiresAt) > new Date());
   const availableEmployees = data.employees.filter(employee => employee.active && !employee.profileId);
-  return `<div class="admin-intro"><div><span class="admin-icon">♧</span><div><h2>Управление командой</h2><p>Сначала создайте карточку сотрудника. Если человеку нужен вход в CRM, выберите его ниже и отправьте готовую ссылку.</p></div></div></div><section class="admin-section"><div class="panel-head"><div><p class="eyebrow">Команда</p><h2>Карточки сотрудников</h2></div></div><div class="people">${data.employees.map(employee => `<article class="person ${employee.active ? '' : 'is-inactive'}"><div class="avatar">${C.esc(employee.name).slice(0, 1)}</div><div><h3>${C.esc(employee.name)}</h3><p>${C.esc(employee.role)}</p><small>${C.esc(employee.phone || 'Телефон не указан')} · ${employee.active ? 'Работает' : 'Неактивен'}</small></div><button class="ghost person-edit" data-edit-employee="${employee.id}">Изменить</button></article>`).join('') || empty('Добавьте первого сотрудника')}</div></section><section class="admin-section access-section"><div class="panel-head"><div><p class="eyebrow">Авторизация</p><h2>Доступ к системе</h2></div></div><div class="invite-builder"><label>Для кого<select id="invite-employee"><option value="">Новый сотрудник без карточки</option>${availableEmployees.map(employee => `<option value="${employee.id}">${C.esc(employee.name)}</option>`).join('')}</select></label><label>Уровень доступа<select id="invite-role"><option value="staff">Сотрудник</option><option value="admin">Администратор</option></select></label><button class="primary" id="invite">Создать ссылку для входа</button></div><p class="note compact">Сотрудник откроет ссылку, зарегистрируется и автоматически попадёт в вашу организацию. Код действует 7 дней и используется один раз.</p><div class="member-list">${data.members.map(member => `<article class="member-row ${member.active ? '' : 'is-inactive'}"><div class="avatar small">${C.esc(member.name || '?').slice(0, 1)}</div><div class="member-copy"><h3>${C.esc(member.name || 'Без имени')}</h3><p>${roleLabels[member.role] || C.esc(member.role)} · ${member.active ? 'активен' : 'доступ отключён'}</p></div>${memberControls(member)}</article>`).join('')}</div>${activeInvites.length ? `<div class="pending-invites"><h3>Ожидают подключения</h3>${activeInvites.map(invite => {
+  return `<div class="admin-intro"><div><span class="admin-icon">♧</span><div><h2>Управление командой</h2><p>Сначала создайте карточку сотрудника. Если человеку нужен вход в CRM, выберите его ниже и отправьте готовую ссылку.</p></div></div></div><section class="admin-section"><div class="panel-head"><div><p class="eyebrow">Команда</p><h2>Карточки сотрудников</h2></div></div><div class="people">${data.employees.map(employee => `<article class="person ${employee.active ? '' : 'is-inactive'}"><div class="avatar">${C.esc(employee.name).slice(0, 1)}</div><div><h3>${C.esc(employee.name)}</h3><p>${C.esc(employee.role)}</p><small>${C.esc(employee.phone || 'Телефон не указан')} · ${employee.active ? 'Работает' : 'Неактивен'}</small></div><button class="ghost person-edit" data-edit-employee="${employee.id}">Изменить</button></article>`).join('') || empty('Добавьте первого сотрудника', ADD_LABELS.employees)}</div></section><section class="admin-section access-section"><div class="panel-head"><div><p class="eyebrow">Авторизация</p><h2>Доступ к системе</h2></div></div><div class="invite-builder"><label>Для кого<select id="invite-employee"><option value="">Новый сотрудник без карточки</option>${availableEmployees.map(employee => `<option value="${employee.id}">${C.esc(employee.name)}</option>`).join('')}</select></label><label>Уровень доступа<select id="invite-role"><option value="staff">Сотрудник</option><option value="admin">Администратор</option></select></label><button class="primary" id="invite">Создать ссылку для входа</button></div><p class="note compact">Сотрудник откроет ссылку, зарегистрируется и автоматически попадёт в вашу организацию. Код действует 7 дней и используется один раз.</p><div class="member-list">${data.members.map(member => `<article class="member-row ${member.active ? '' : 'is-inactive'}"><div class="avatar small">${C.esc(member.name || '?').slice(0, 1)}</div><div class="member-copy"><h3>${C.esc(member.name || 'Без имени')}</h3><p>${roleLabels[member.role] || C.esc(member.role)} · ${member.active ? 'активен' : 'доступ отключён'}</p></div>${memberControls(member)}</article>`).join('')}</div>${activeInvites.length ? `<div class="pending-invites"><h3>Ожидают подключения</h3>${activeInvites.map(invite => {
     const employee = data.employees.find(item => item.id === invite.employeeId);
     return `<article><span><b>${C.esc(employee?.name || roleLabels[invite.role] || 'Сотрудник')}</b><small>Действует до ${dateTime(invite.expiresAt)}</small></span><button class="ghost" data-copy-invite="${invite.token}">Копировать ссылку</button><button class="link danger" data-revoke-invite="${invite.id}">Отозвать</button></article>`;
   }).join('')}</div>` : ''}</section>`;
@@ -632,7 +776,7 @@ function calendarView() {
     const key = localDateKey(day);
     const events = data.schedule.filter(item => localDateKey(new Date(item.scheduledAt)) === key).sort((a, b) => new Date(a.scheduledAt) - new Date(b.scheduledAt));
     return `<article class="calendar-day ${day.getMonth() !== month ? 'outside' : ''} ${key === todayKey ? 'today' : ''}"><button class="calendar-date" data-calendar-date="${key}" aria-label="Добавить событие на ${key}">${day.getDate()}<span>＋</span></button><div>${events.slice(0, 3).map(item => `<button class="calendar-event type-${item.type} ${['Выполнено', 'Отменено'].includes(item.status) ? 'done' : ''}" data-edit-schedule="${item.id}" title="${C.esc(item.title)}"><time>${new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' }).format(new Date(item.scheduledAt))}</time>${C.esc(item.title)}</button>`).join('')}${events.length > 3 ? `<small class="more-events">ещё ${events.length - 3}</small>` : ''}</div></article>`;
-  }).join('')}</div></section><aside class="calendar-agenda"><div class="panel-head"><div><p class="eyebrow">Следующие</p><h2>Ближайшие планы</h2></div></div><div class="upcoming-list">${upcoming.map(item => scheduleCompact(item)).join('') || empty('План пока свободен')}</div><div class="calendar-legend"><span class="type-shipment">Отгрузка</span><span class="type-commitment">Обязательство</span><span class="type-production">Производство</span><span class="type-other">Другое</span></div></aside></div>`;
+  }).join('')}</div></section><aside class="calendar-agenda"><div class="panel-head"><div><p class="eyebrow">Следующие</p><h2>Ближайшие планы</h2></div></div><div class="upcoming-list">${upcoming.map(item => scheduleCompact(item)).join('') || empty('План пока свободен', ADD_LABELS.calendar)}</div><div class="calendar-legend"><span class="type-shipment">Отгрузка</span><span class="type-commitment">Обязательство</span><span class="type-production">Производство</span><span class="type-other">Другое</span></div></aside></div>`;
 }
 
 function groupedCount(items, field) {
@@ -804,9 +948,8 @@ function render() {
   $('#title').textContent = title[1];
   $('#app').innerHTML = views[section]();
   document.querySelectorAll('#nav button').forEach(button => button.classList.toggle('active', button.dataset.section === section));
-  const addLabels = { orders: '＋ Заказ', clients: '＋ Клиент', production: '＋ Производство', products: '＋ Товар', employees: '＋ Сотрудник', accruals: '＋ Начисление', calendar: '＋ Событие' };
-  $('#add').textContent = addLabels[section] || '＋ Добавить';
-  $('#add').hidden = !addLabels[section] || (!manager && ['products', 'employees', 'accruals'].includes(section));
+  $('#add').textContent = ADD_LABELS[section] || '＋ Добавить';
+  $('#add').hidden = !ADD_LABELS[section] || (!manager && ['products', 'employees', 'accruals'].includes(section));
   document.querySelector('.sidebar').classList.remove('open');
   if (section === 'ai') requestAnimationFrame(() => {
     const log = $('.ai-chat-log');
@@ -1275,6 +1418,12 @@ $('#app').onclick = async event => {
     go(target.dataset.go);
     return;
   }
+  const emptyAction = event.target.closest('[data-empty-route]');
+  if (emptyAction) {
+    go(emptyAction.dataset.emptyRoute);
+    openForm();
+    return;
+  }
   const aiQuestion = event.target.closest('[data-ai-question]');
   if (aiQuestion) {
     await askAi(aiQuestion.dataset.aiQuestion);
@@ -1420,5 +1569,38 @@ $('#signout').onclick = $('#onboarding-signout').onclick = async () => {
   applyRoute();
 };
 
+$('#global-search').oninput = event => renderGlobalSearch(event.target.value);
+$('#global-search').onkeydown = event => {
+  if (event.key === 'Escape') {
+    event.target.value = '';
+    renderGlobalSearch('');
+  }
+  if (event.key === 'Enter') {
+    const firstResult = $('#global-search-results [data-search-route]');
+    if (firstResult) firstResult.click();
+  }
+};
+$('#global-search-results').onclick = event => {
+  const result = event.target.closest('[data-search-route]');
+  if (!result) return;
+  $('#global-search').value = '';
+  renderGlobalSearch('');
+  go(result.dataset.searchRoute);
+};
+document.addEventListener('click', event => {
+  if (!event.target.closest('.global-search')) renderGlobalSearch('');
+});
+
+$('#pwa-update-button').onclick = () => {
+  if (waitingServiceWorker) waitingServiceWorker.postMessage({ type: 'SKIP_WAITING' });
+};
+$('#pwa-update-later').onclick = () => { $('#pwa-update').hidden = true; };
+$('#reload-app').onclick = () => location.reload();
+
+window.addEventListener('online', updateNetworkState);
+window.addEventListener('offline', updateNetworkState);
+window.addEventListener('error', event => showFatalError(event.error || event.message));
+window.addEventListener('unhandledrejection', event => showFatalError(event.reason));
+window.addEventListener('popstate', applyRoute);
 window.addEventListener('hashchange', applyRoute);
 init();
