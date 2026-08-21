@@ -60,6 +60,7 @@ test("ships the configured Russian IceFresh application", async () => {
   assert.match(html, /name="twitter:card" content="summary_large_image"/);
   assert.match(html, /Вход для сотрудников/);
   assert.match(html, /Добро пожаловать в IceFresh/);
+  assert.match(html, /<form id="create-org" hidden aria-hidden="true"><\/form>/);
   assert.match(html, /Данные защищены и синхронизируются/);
   assert.match(html, /id="network-banner"/);
   assert.match(html, /id="pwa-update"/);

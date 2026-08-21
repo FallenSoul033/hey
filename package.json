@@ -12,7 +12,7 @@
     "test": "vinext build && node --test --test-isolation=none tests/*.test.mjs",
     "test:static": "node --test --test-isolation=none tests/*.test.mjs",
     "verify:release": "npm run build && npm run lint && npm run test:static",
-    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
+    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern work --ignore-pattern outputs",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
