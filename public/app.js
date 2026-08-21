@@ -388,6 +388,7 @@ async function init() {
   deferPwaSetup();
   updateNetworkState();
   loadPublicVersion();
+  setupPublicExperience();
   $('#public-order-form [name=started_at]').value = String(Date.now());
   $('#public-order-form').dataset.idempotencyKey = crypto.randomUUID();
   $('#auth-form [name=full_name]').parentElement.hidden = true;
@@ -459,9 +460,8 @@ function renderPublicCatalogue() {
   $('#public-product-count').textContent = String(products.length);
   grid.innerHTML = products.map((product, index) => {
     const photo = productPhotoUrl(product);
-    const visual = photo
-      ? `<img class="public-product-photo ${product.id === 'cup250' ? 'product-photo--cup250' : ''}" src="${C.esc(photo)}" alt="${C.esc(product.name)}" loading="lazy">`
-      : `<div class="product-art ice-product-art"><span>❄</span><strong>${C.esc(product.weight || 'IceFresh')}</strong></div>`;
+    const fallbackPhoto = '/assets/products/gallery-ice.webp';
+    const visual = `<img class="public-product-photo ${product.id === 'cup250' ? 'product-photo--cup250' : ''}" src="${C.esc(photo || fallbackPhoto)}" alt="${C.esc(product.name)}" loading="lazy">`;
     return `<article class="catalog-card ${index === 0 ? 'featured' : ''}"><span class="catalog-label">${index === 0 ? 'Популярный выбор' : 'IceFresh'}</span>${visual}<h3>${C.esc(product.name)}</h3><div class="catalog-price"><b>${C.esc(product.weight || product.unit)}</b><strong>${C.money(product.price)}</strong></div><p>${C.esc(product.description || 'Чистый лёд IceFresh в удобной упаковке.')}</p><button type="button" data-product="${C.esc(product.id)}">Выбрать</button></article>`;
   }).join('');
   const previous = select.value;
@@ -1497,6 +1497,36 @@ async function deleteSchedule(id) {
 
 function scrollPublic(id) {
   document.getElementById(id)?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+}
+
+function setupPublicExperience() {
+  const hero = document.querySelector('.hero-visual');
+  const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (hero && !reducedMotion && matchMedia('(pointer: fine)').matches) {
+    hero.addEventListener('pointermove', event => {
+      const bounds = hero.getBoundingClientRect();
+      const x = ((event.clientX - bounds.left) / bounds.width - .5) * 7;
+      const y = ((event.clientY - bounds.top) / bounds.height - .5) * -6;
+      hero.style.setProperty('--tilt-x', `${x.toFixed(2)}deg`);
+      hero.style.setProperty('--tilt-y', `${y.toFixed(2)}deg`);
+    });
+    hero.addEventListener('pointerleave', () => {
+      hero.style.setProperty('--tilt-x', '0deg');
+      hero.style.setProperty('--tilt-y', '0deg');
+    });
+  }
+  if (!reducedMotion && 'IntersectionObserver' in window) {
+    const sections = document.querySelectorAll('.public-section');
+    sections.forEach(sectionElement => sectionElement.classList.add('is-reveal-ready'));
+    const observer = new IntersectionObserver(entries => {
+      entries.forEach(entry => {
+        if (!entry.isIntersecting) return;
+        entry.target.classList.add('is-visible');
+        observer.unobserve(entry.target);
+      });
+    }, { threshold: .08, rootMargin: '0px 0px -8% 0px' });
+    sections.forEach(sectionElement => observer.observe(sectionElement));
+  }
 }
 
 $('#public-site').onclick = event => {

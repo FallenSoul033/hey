@@ -51,9 +51,12 @@ test("ships the configured Russian IceFresh application", async () => {
     readFile(new URL("sitemap.xml", root), "utf8"),
     readFile(new URL("version.json", root), "utf8"),
   ]);
-  assert.match(html, /Чистый лёд[\s\S]*для бизнеса и дома/);
-  assert.match(html, /Оставить заявку/);
-  assert.match(html, /assets\/products\/hero-icefresh\.webp/);
+  assert.match(html, /Холод,[\s\S]*который[\s\S]*запоминают/);
+  assert.match(html, /Заказать сейчас/);
+  assert.match(html, /assets\/products\/hero-3d-frozen-lens\.webp/);
+  assert.match(html, /assets\/products\/hero-3d-frozen-lens-mobile\.webp/);
+  assert.match(html, /assets\/products\/cup-250\.webp/);
+  assert.doesNotMatch(html, /class="product-art/);
   assert.match(html, /id="gallery"/);
   assert.match(html, /id="go-site"/);
   assert.match(html, /property="og:image" content="https:\/\/icefresh\.kz\/icefresh-social\.jpg"/);
@@ -151,7 +154,7 @@ test("implements the core approved workflow without exposing management fields p
 
   assert.ok(cup.length > 5_000);
   assert.ok(bag.length > 5_000);
-  assert.match(html, /Настоящие фотографии нашей продукции/);
+  assert.match(html, /IceFresh в деле/);
   assert.match(app, /BUILT_IN_PRODUCT_PHOTOS/);
   assert.match(app, /min_stock: Number\(raw\.minStock\)/);
   assert.match(app, /rpc\('accept_website_request'/);
