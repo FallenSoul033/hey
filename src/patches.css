@@ -1,0 +1,1 @@
+.event .dot{padding:0;border:0;display:block;flex:0 0 9px}.event .dot.sev-info{background:#2d7ee8}.event .dot.sev-warning{background:#e9a12c}.event .dot.sev-error,.event .dot.sev-fatal{background:var(--danger)}.pending-card>p{margin:-6px 0 2px;color:var(--muted);line-height:1.55}
