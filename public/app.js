@@ -2,7 +2,7 @@
 const C = IceCore;
 const R = IceRoutes;
 const SDK_VERSION = '2.111.0';
-const APP_VERSION = '12.0.0-alpha.1';
+const APP_VERSION = '12.0.0-rc.1.5';
 const PRODUCT_IMAGE_BUCKET = 'product-images';
 const BUILT_IN_PRODUCT_PHOTOS = {
   cup250: '/assets/products/cup-250.webp',
@@ -33,7 +33,8 @@ function emptyData() {
   return {
     orders: [], clients: [], production: [], employees: [], accruals: [],
     requests: [], products: [], schedule: [], members: [], invites: [],
-    inventoryLedger: [], financialLedger: [], operationEvents: [], notificationEvents: []
+    inventoryLedger: [], inventorySummary: [], financeSummary: null, productSalesSummary: [],
+    financialLedger: [], operationEvents: [], notificationEvents: []
   };
 }
 
@@ -47,6 +48,8 @@ let section = 'dashboard';
 let authMode = 'signin';
 let realtime = null;
 let refreshTimer = null;
+let refreshInFlight = false;
+let refreshQueued = false;
 let appLoaded = false;
 let hydration = null;
 let hydratingUserId = null;
@@ -193,6 +196,11 @@ async function setupPwa() {
   }
 }
 
+function deferPwaSetup() {
+  if ('requestIdleCallback' in window) window.requestIdleCallback(() => setupPwa(), { timeout: 3_000 });
+  else window.setTimeout(() => setupPwa(), 1_500);
+}
+
 function updateNetworkState() {
   const offline = !navigator.onLine;
   $('#network-banner').hidden = !offline;
@@ -313,12 +321,14 @@ function setAuthMode(next) {
   authMode = wanted;
   const signup = authMode === 'signup';
   $('#auth-copy').textContent = signup
-    ? 'Создайте личный аккаунт для работы в IceFresh.'
+    ? 'Регистрация доступна только по приглашению владельца IceFresh.'
     : 'Войдите, чтобы работать с общей базой компании.';
   $('#auth-mode').textContent = signup ? 'У меня уже есть аккаунт' : 'Создать новый аккаунт';
   $('#auth-form button').textContent = signup ? 'Зарегистрироваться' : 'Войти';
   $('#auth-form [name=full_name]').parentElement.hidden = !signup;
   $('#auth-form [name=full_name]').required = signup;
+  $('#auth-form [name=invite_token]').parentElement.hidden = !signup;
+  $('#auth-form [name=invite_token]').required = signup;
   $('#auth-form [name=password]').autocomplete = signup ? 'new-password' : 'current-password';
   if (changed) showMessage('#auth-message', '');
 }
@@ -375,12 +385,11 @@ function resetIdentity() {
 }
 
 async function init() {
-  setupPwa();
+  deferPwaSetup();
   updateNetworkState();
   loadPublicVersion();
-  $('#logo').src = $('#auth-logo').src = document.querySelector('.onboarding-logo').src = window.ICEFRESH_LOGO;
-  document.querySelectorAll('.public-logo').forEach(element => { element.src = window.ICEFRESH_LOGO; });
   $('#public-order-form [name=started_at]').value = String(Date.now());
+  $('#public-order-form').dataset.idempotencyKey = crypto.randomUUID();
   $('#auth-form [name=full_name]').parentElement.hidden = true;
   $('#setup-warning').hidden = true;
   $('#setup-warning').style.display = 'none';
@@ -517,22 +526,28 @@ async function enter(nextSession, force = false) {
 async function loadAll() {
   setSync('Синхронизация…');
   const emptyResult = Promise.resolve({ data: [], error: null });
+  const ordersQuery = manager
+    ? supabase.from('orders').select('id,order_date,client_id,client_name,status,created_at,updated_at,paid_amount,order_items(id,product_id,quantity,unit_price)').order('order_date', { ascending: false }).order('created_at', { ascending: false }).limit(400)
+    : supabase.rpc('list_orders_operational_rc', { p_limit: 400 });
   const results = await Promise.all([
     supabase.from('organizations').select('id,name').eq('id', profile.organization_id).single(),
     supabase.from('clients').select('*').order('created_at', { ascending: false }),
     supabase.from('employees').select('*').order('active', { ascending: false }).order('full_name'),
-    supabase.from('orders').select('*').order('order_date', { ascending: false }).order('created_at', { ascending: false }),
-    supabase.from('production_entries').select('*').order('production_date', { ascending: false }).order('created_at', { ascending: false }),
-    supabase.from('website_requests').select('id,organization_id,customer_name,phone,customer_type,product_id,quantity,message,status,source,created_at,updated_at').order('created_at', { ascending: false }),
+    ordersQuery,
+    supabase.from('production_entries').select('*').order('production_date', { ascending: false }).order('created_at', { ascending: false }).limit(400),
+    supabase.from('website_requests').select('id,organization_id,customer_name,phone,customer_type,product_id,quantity,message,status,source,created_at,updated_at').order('created_at', { ascending: false }).limit(400),
     supabase.from('products').select('*').order('sort_order').order('name'),
     supabase.from('schedule_items').select('*').order('scheduled_at'),
     supabase.from('profiles').select('id,organization_id,full_name,role,active,created_at').eq('organization_id', profile.organization_id).order('created_at'),
     manager ? supabase.from('accruals').select('*').order('accrual_date', { ascending: false }).order('created_at', { ascending: false }) : emptyResult,
     manager ? supabase.from('organization_invites').select('id,token,role,employee_id,expires_at,accepted_by,accepted_at,created_at').order('created_at', { ascending: false }) : emptyResult,
-    supabase.from('inventory_ledger').select('id,product_id,source_type,source_id,movement_type,category,quantity_delta,description,occurred_at').order('occurred_at', { ascending: false }).limit(2000),
-    manager ? supabase.from('financial_ledger').select('id,order_id,entry_type,amount_delta,description,occurred_at').order('occurred_at', { ascending: false }).limit(500) : emptyResult,
+    supabase.from('stock_ledger').select('id,product_id,source_type,source_id,movement_type,on_hand_delta,reserved_delta,description,occurred_at').order('occurred_at', { ascending: false }).limit(200),
+    manager ? supabase.from('financial_ledger').select('id,order_id,entry_type,amount,description,occurred_at').order('occurred_at', { ascending: false }).limit(500) : emptyResult,
     manager ? supabase.from('operation_events').select('id,severity,event_type,entity_type,entity_id,message,details,request_id,occurred_at').order('occurred_at', { ascending: false }).limit(500) : emptyResult,
-    manager ? supabase.from('notification_events').select('id,channel,recipient,event_type,aggregate_type,aggregate_id,status,attempts,next_attempt_at,last_error,created_at,sent_at').order('created_at', { ascending: false }).limit(500) : emptyResult
+    manager ? supabase.from('notification_events').select('id,channel,recipient,event_type,aggregate_type,aggregate_id,status,attempts,next_attempt_at,last_error,created_at,sent_at').order('created_at', { ascending: false }).limit(500) : emptyResult,
+    supabase.rpc('get_inventory_summary_rc'),
+    manager ? supabase.rpc('get_finance_summary_rc') : emptyResult,
+    manager ? supabase.rpc('get_product_sales_summary_rc') : emptyResult
   ]);
   const firstError = results.find(result => result.error)?.error;
   if (firstError) {
@@ -544,7 +559,12 @@ async function loadAll() {
   organization = results[0].data;
   data.clients = results[1].data.map(row => ({ id: row.id, name: row.name, category: row.category, phone: row.phone }));
   data.employees = results[2].data.map(row => ({ id: row.id, profileId: row.profile_id, name: row.full_name, role: row.position, phone: row.phone, active: row.active }));
-  data.orders = results[3].data.map(row => ({ id: row.id, date: row.order_date, clientId: row.client_id, client: row.client_name, product: row.product_id, qty: Number(row.quantity), price: Number(row.unit_price), paid: Number(row.paid_amount), status: row.status }));
+  data.orders = results[3].data.map(row => {
+    const items = (row.order_items || row.items || []).map(item => ({ id: item.id, product: item.product_id, qty: Number(item.quantity), price: manager ? Number(item.unit_price) : 0 }));
+    const total = manager ? items.reduce((sum, item) => sum + item.qty * item.price, 0) : 0;
+    const quantity = items.reduce((sum, item) => sum + item.qty, 0);
+    return { id: row.id, date: row.order_date, clientId: row.client_id, client: row.client_name, items, product: items[0]?.product || '', qty: quantity, price: quantity ? total / quantity : 0, total, paid: manager ? Number(row.paid_amount || 0) : 0, status: row.status };
+  });
   data.production = results[4].data.map(row => ({ id: row.id, date: row.production_date, product: row.product_id, qty: Number(row.quantity), employeeId: row.employee_id, employee: row.employee_name }));
   data.requests = results[5].data.map(row => ({ id: row.id, date: row.created_at, name: row.customer_name, phone: row.phone, type: row.customer_type, product: row.product_id, qty: Number(row.quantity), message: row.message, status: row.status, source: row.source }));
   data.products = results[6].data.map(normalizeProduct);
@@ -552,10 +572,13 @@ async function loadAll() {
   data.members = results[8].data.map(row => ({ id: row.id, name: row.full_name, role: row.role, active: row.active, createdAt: row.created_at }));
   data.accruals = manager ? results[9].data.map(row => ({ id: row.id, date: row.accrual_date, employeeId: row.employee_id, employee: row.employee_name, description: row.description, qty: Number(row.quantity), rate: Number(row.rate), paid: row.paid })) : [];
   data.invites = manager ? results[10].data.map(row => ({ id: row.id, token: row.token, role: row.role, employeeId: row.employee_id, expiresAt: row.expires_at, acceptedBy: row.accepted_by, acceptedAt: row.accepted_at })) : [];
-  data.inventoryLedger = results[11].data.map(row => ({ id: row.id, product: row.product_id, sourceType: row.source_type, sourceId: row.source_id, movementType: row.movement_type, category: row.category, delta: Number(row.quantity_delta), description: row.description, occurredAt: row.occurred_at }));
-  data.financialLedger = manager ? results[12].data.map(row => ({ id: row.id, orderId: row.order_id, type: row.entry_type, delta: Number(row.amount_delta), description: row.description, occurredAt: row.occurred_at })) : [];
+  data.inventoryLedger = results[11].data.map(row => ({ id: row.id, product: row.product_id, sourceType: row.source_type, sourceId: row.source_id, movementType: row.movement_type, onHandDelta: Number(row.on_hand_delta), reservedDelta: Number(row.reserved_delta), delta: Number(row.on_hand_delta) || Number(row.reserved_delta), description: row.description, occurredAt: row.occurred_at }));
+  data.financialLedger = manager ? results[12].data.map(row => ({ id: row.id, orderId: row.order_id, type: row.entry_type, delta: Number(row.amount), description: row.description, occurredAt: row.occurred_at })) : [];
   data.operationEvents = manager ? results[13].data.map(row => ({ id: row.id, severity: row.severity, type: row.event_type, entityType: row.entity_type, entityId: row.entity_id, message: row.message, details: row.details || {}, requestId: row.request_id, occurredAt: row.occurred_at })) : [];
   data.notificationEvents = manager ? results[14].data.map(row => ({ id: row.id, channel: row.channel, recipient: row.recipient, type: row.event_type, aggregateType: row.aggregate_type, aggregateId: row.aggregate_id, status: row.status, attempts: row.attempts, nextAttemptAt: row.next_attempt_at, lastError: row.last_error, createdAt: row.created_at, sentAt: row.sent_at })) : [];
+  data.inventorySummary = results[15].data.map(row => ({ product: row.product_id, onHand: Number(row.on_hand), reserved: Number(row.reserved), available: Number(row.available), shipped: Number(row.shipped), produced: Number(row.produced), adjustments: Number(row.adjustments) }));
+  data.financeSummary = manager ? (results[16].data?.[0] || null) : null;
+  data.productSalesSummary = manager ? results[17].data.map(row => ({ product: row.product_id, total: Number(row.total) })) : [];
 
   document.querySelector('.brand small').textContent = organization.name;
   document.querySelector('.privacy').textContent = `● Онлайн · ${profile.full_name} · ${roleLabels[profile.role] || profile.role}`;
@@ -567,7 +590,7 @@ async function loadAll() {
 async function subscribe() {
   stopRealtime();
   realtime = supabase.channel(`icefresh-${profile.organization_id}`);
-  const tables = ['clients', 'employees', 'orders', 'production_entries', 'inventory_ledger', 'website_requests', 'products', 'schedule_items', ...(manager ? ['accruals', 'organization_invites', 'financial_ledger', 'operation_events', 'notification_events'] : [])];
+  const tables = ['clients', 'employees', 'production_entries', 'stock_ledger', 'website_requests', 'products', 'schedule_items', ...(manager ? ['orders', 'order_items', 'accruals', 'organization_invites', 'financial_ledger', 'operation_events', 'notification_events'] : ['order_change_signal'])];
   for (const tableName of tables) {
     realtime.on('postgres_changes', { event: '*', schema: 'public', table: tableName, filter: `organization_id=eq.${profile.organization_id}` }, scheduleRefresh);
   }
@@ -582,8 +605,20 @@ function stopRealtime() {
 function scheduleRefresh() {
   clearTimeout(refreshTimer);
   refreshTimer = setTimeout(async () => {
-    await loadAll();
-    if (document.body.classList.contains('app-ready')) render();
+    if (refreshInFlight) {
+      refreshQueued = true;
+      return;
+    }
+    refreshInFlight = true;
+    try {
+      do {
+        refreshQueued = false;
+        await loadAll();
+        if (document.body.classList.contains('app-ready')) render();
+      } while (refreshQueued);
+    } finally {
+      refreshInFlight = false;
+    }
   }, 350);
 }
 
@@ -594,18 +629,25 @@ function buildNav() {
   });
   const newCount = data.requests.filter(request => request.status === 'Новая').length;
   $('#nav').innerHTML = allowed.map(item => `<button data-section="${item[0]}"><span>${item[1]}</span>${item[2]}${item[0] === 'requests' && newCount ? ` <b class="nav-count">${newCount}</b>` : ''}</button>`).join('');
+  $('#backup').hidden = !manager;
 }
 
 function metrics() {
   const activeOrders = data.orders.filter(order => order.status !== 'Отменён');
-  const sales = activeOrders.reduce((sum, order) => sum + C.calcOrder(order).total, 0);
-  const paid = activeOrders.reduce((sum, order) => sum + C.calcOrder(order).paid, 0);
+  const finance = data.financeSummary || {};
+  const sales = manager ? Number(finance.sales || 0) : 0;
+  const paid = manager ? Number(finance.paid || 0) : 0;
   const wage = data.accruals.reduce((sum, accrual) => sum + C.calcAccrual(accrual), 0);
-  return { sales, paid, debt: sales - paid, wage, orders: activeOrders.length };
+  return { sales, paid, debt: manager ? Number(finance.debt || 0) : 0, wage, orders: activeOrders.length };
 }
 
 function cards() {
   const value = metrics();
+  if (!manager) {
+    const newOrders = data.orders.filter(order => order.status === 'Новый').length;
+    const delivery = data.orders.filter(order => ['На доставке', 'Доставлен'].includes(order.status)).length;
+    return `<div class="metrics"><article><i>Активные заказы</i><b>${value.orders}</b><small>Без финансовых данных</small></article><article><i>Новые</i><b>${newOrders}</b><small>Нужно подтвердить</small></article><article><i>Доставка</i><b>${delivery}</b><small>В пути или доставлены</small></article><article><i>Статус</i><b class="online-big">Онлайн</b><small>Общая база обновляется</small></article></div>`;
+  }
   return `<div class="metrics"><article><i>Продажи</i><b>${C.money(value.sales)}</b><small>${value.orders} активных заказов</small></article><article><i>Получено</i><b>${C.money(value.paid)}</b><small class="ok">Оплаченная сумма</small></article><article><i>Дебиторка</i><b>${C.money(value.debt)}</b><small class="warn">Ожидается оплата</small></article>${manager ? `<article><i>Начисления</i><b>${C.money(value.wage)}</b><small>За весь период</small></article>` : '<article><i>Статус</i><b class="online-big">Онлайн</b><small>Общая база обновляется</small></article>'}</div>`;
 }
 
@@ -686,12 +728,16 @@ function scheduleCompact(item) {
 
 function ledgerInventory() {
   return catalogue().map(product => {
-    const movements = data.inventoryLedger.filter(item => item.product === product.id);
-    const made = rounded(movements.filter(item => item.category === 'production').reduce((sum, item) => sum + item.delta, 0));
-    const sold = rounded(-movements.filter(item => item.category === 'order').reduce((sum, item) => sum + item.delta, 0));
-    const adjustments = rounded(movements.filter(item => item.category === 'adjustment').reduce((sum, item) => sum + item.delta, 0));
-    const stock = rounded(movements.reduce((sum, item) => sum + item.delta, 0));
-    return { ...product, made, sold, adjustments, stock };
+    const summary = data.inventorySummary.find(item => item.product === product.id) || {};
+    return {
+      ...product,
+      made: rounded(summary.produced),
+      shipped: rounded(summary.shipped),
+      reserved: rounded(summary.reserved),
+      adjustments: rounded(summary.adjustments),
+      stock: rounded(summary.available),
+      onHand: rounded(summary.onHand)
+    };
   });
 }
 
@@ -713,7 +759,9 @@ function dashboardView() {
   const newRequests = data.requests.filter(request => request.status === 'Новая').length;
   const requestAlert = newRequests ? `<button class="request-alert" data-go="requests"><span><b>${newRequests} ${newRequests === 1 ? 'новая заявка' : 'новых заявок'} с сайта</b><span>Посетители IceFresh ожидают обратной связи.</span></span><strong>Открыть →</strong></button>` : '';
   const upcoming = openScheduleItems().slice(0, 5);
-  return `${requestAlert}${cards()}<div class="grid2"><article class="panel"><div class="panel-head"><div><p class="eyebrow">Актуальные данные</p><h2>Последние заказы</h2></div><button class="link" data-go="orders">Все заказы →</button></div>${table(['Клиент', 'Товар', 'Сумма', 'Статус'], data.orders.slice(0, 5).map(order => `<tr><td><b>${C.esc(order.client)}</b></td><td>${C.esc(prod(order.product))} × ${order.qty}</td><td>${C.money(C.calcOrder(order).total)}</td><td>${badge(order.status)}</td></tr>`).join(''))}</article><article class="panel"><div class="panel-head"><div><p class="eyebrow">План</p><h2>Ближайшие отгрузки и обязательства</h2></div><button class="link" data-go="calendar">Календарь →</button></div><div class="upcoming-list">${upcoming.map(item => scheduleCompact(item)).join('') || empty('Ближайших событий нет', ADD_LABELS.calendar, 'calendar')}</div></article></div><article class="panel dashboard-stock"><div class="panel-head"><div><p class="eyebrow">Остатки</p><h2>Склад готовой продукции</h2></div><button class="link" data-go="warehouse">Подробнее →</button></div><div class="stocks">${inventory.map(item => `<div class="stock-row stock-${stockLevel(item)}"><span>${C.esc(item.name)}<small>${item.made} произведено · ${item.sold} отгружено${stockNotice(item) ? ` · ${C.esc(stockNotice(item))}` : ''}</small></span><b class="${stockLevel(item) !== 'ok' ? 'danger' : ''}">${item.stock} ${C.esc(item.unit)}</b></div>`).join('')}</div></article>`;
+  const orderHeaders = manager ? ['Клиент', 'Товар', 'Сумма', 'Статус'] : ['Клиент', 'Товар', 'Количество', 'Статус'];
+  const orderRows = data.orders.slice(0, 5).map(order => `<tr><td><b>${C.esc(order.client)}</b></td><td>${C.esc(prod(order.product))}</td><td>${manager ? C.money(C.calcOrder(order).total) : order.qty}</td><td>${badge(order.status)}</td></tr>`).join('');
+  return `${requestAlert}${cards()}<div class="grid2"><article class="panel"><div class="panel-head"><div><p class="eyebrow">Актуальные данные</p><h2>Последние заказы</h2></div><button class="link" data-go="orders">Все заказы →</button></div>${table(orderHeaders, orderRows)}</article><article class="panel"><div class="panel-head"><div><p class="eyebrow">План</p><h2>Ближайшие отгрузки и обязательства</h2></div><button class="link" data-go="calendar">Календарь →</button></div><div class="upcoming-list">${upcoming.map(item => scheduleCompact(item)).join('') || empty('Ближайших событий нет', ADD_LABELS.calendar, 'calendar')}</div></article></div><article class="panel dashboard-stock"><div class="panel-head"><div><p class="eyebrow">Остатки</p><h2>Склад готовой продукции</h2></div><button class="link" data-go="warehouse">Подробнее →</button></div><div class="stocks">${inventory.map(item => `<div class="stock-row stock-${stockLevel(item)}"><span>${C.esc(item.name)}<small>${item.made} произведено · ${item.shipped} отгружено · ${item.reserved} в резерве${stockNotice(item) ? ` · ${C.esc(stockNotice(item))}` : ''}</small></span><b class="${stockLevel(item) !== 'ok' ? 'danger' : ''}">${item.stock} ${C.esc(item.unit)}</b></div>`).join('')}</div></article>`;
 }
 
 function requestsView() {
@@ -723,6 +771,9 @@ function requestsView() {
 }
 
 function ordersView() {
+  if (!manager) {
+    return cards() + `<article class="panel">${table(['Дата', 'Клиент', 'Товар', 'Количество', 'Статус', ''], data.orders.map(order => `<tr><td>${order.date}</td><td><b>${C.esc(order.client)}</b></td><td>${C.esc(prod(order.product))}</td><td>${order.qty}</td><td>${badge(order.status)}</td><td><button class="link table-action" data-edit-order="${C.esc(order.id)}">Изменить</button></td></tr>`).join(''))}</article>`;
+  }
   return cards() + `<article class="panel">${table(['Дата', 'Клиент', 'Товар', 'Кол-во', 'Итого', 'Оплачено', 'Долг', 'Статус', ''], data.orders.map(order => {
     const value = C.calcOrder(order);
     return `<tr><td>${order.date}</td><td><b>${C.esc(order.client)}</b></td><td>${C.esc(prod(order.product))}</td><td>${order.qty}</td><td>${C.money(value.total)}</td><td>${C.money(value.paid)}</td><td class="${value.debt ? 'danger' : ''}">${C.money(value.debt)}</td><td>${badge(order.status)}</td><td><button class="link table-action" data-edit-order="${order.id}">Изменить</button></td></tr>`;
@@ -731,6 +782,9 @@ function ordersView() {
 
 function clientsView() {
   const categories = ['Магазины', 'HoReCa', 'Частные клиенты', 'Оптовые клиенты'];
+  if (!manager) {
+    return `<div class="category-row">${categories.map(category => `<article><span>${category}</span><b>${data.clients.filter(client => client.category === category).length}</b></article>`).join('')}</div><article class="panel">${table(['Клиент', 'Категория', 'Телефон', 'Заказов', ''], data.clients.map(client => `<tr><td><b>${C.esc(client.name)}</b></td><td>${badge(client.category)}</td><td>${C.esc(client.phone)}</td><td>${data.orders.filter(order => order.clientId === client.id).length}</td><td><button class="link table-action" data-edit-client="${C.esc(client.id)}">Изменить</button></td></tr>`).join(''))}</article>`;
+  }
   return `<div class="category-row">${categories.map(category => `<article><span>${category}</span><b>${data.clients.filter(client => client.category === category).length}</b></article>`).join('')}</div><article class="panel">${table(['Клиент', 'Категория', 'Телефон', 'Заказов', 'Выручка', ''], data.clients.map(client => {
     const orders = data.orders.filter(order => order.clientId === client.id);
     const sum = orders.reduce((total, order) => total + C.calcOrder(order).total, 0);
@@ -748,7 +802,7 @@ function productsView() {
   const publicCount = products.filter(product => product.active && product.publicVisible).length;
   return `<div class="admin-intro"><div><span class="admin-icon">◇</span><div><h2>Каталог IceFresh</h2><p>Добавляйте товары, цены и фотографии. Отметка «Показывать клиентам» автоматически выводит товар на главную страницу.</p></div></div><div class="admin-stats"><span><b>${activeCount}</b> активных</span><span><b>${publicCount}</b> на сайте</span></div></div><div class="admin-product-grid">${products.map(product => {
     const photo = productPhotoUrl(product);
-    return `<article class="admin-product-card ${product.active ? '' : 'is-inactive'}">${photo ? `<img src="${C.esc(photo)}" alt="${C.esc(product.name)}">` : `<div class="admin-product-placeholder">❄<small>${C.esc(product.weight || 'IceFresh')}</small></div>`}<div class="admin-product-body"><div class="card-statuses"><span class="status-pill ${product.active ? 'on' : 'off'}">${product.active ? 'Активен' : 'Отключён'}</span><span class="status-pill ${product.publicVisible ? 'public' : ''}">${product.publicVisible ? 'На сайте' : 'Только в CRM'}</span></div><h3>${C.esc(product.name)}</h3><p>${C.esc(product.description || 'Описание не добавлено')}</p><dl><div><dt>Формат</dt><dd>${C.esc(product.weight || '—')}</dd></div><div><dt>Цена по умолчанию</dt><dd>${C.money(product.price)}</dd></div><div><dt>Минимальный остаток</dt><dd>${product.minStock} ${C.esc(product.unit)}</dd></div><div><dt>Единица</dt><dd>${C.esc(product.unit)}</dd></div></dl><button class="ghost card-edit" data-edit-product="${product.id}">Изменить товар</button></div></article>`;
+    return `<article class="admin-product-card ${product.active ? '' : 'is-inactive'}">${photo ? `<img src="${C.esc(photo)}" alt="${C.esc(product.name)}" decoding="async">` : `<div class="admin-product-placeholder">❄<small>${C.esc(product.weight || 'IceFresh')}</small></div>`}<div class="admin-product-body"><div class="card-statuses"><span class="status-pill ${product.active ? 'on' : 'off'}">${product.active ? 'Активен' : 'Отключён'}</span><span class="status-pill ${product.publicVisible ? 'public' : ''}">${product.publicVisible ? 'На сайте' : 'Только в CRM'}</span></div><h3>${C.esc(product.name)}</h3><p>${C.esc(product.description || 'Описание не добавлено')}</p><dl><div><dt>Формат</dt><dd>${C.esc(product.weight || '—')}</dd></div><div><dt>Цена по умолчанию</dt><dd>${C.money(product.price)}</dd></div><div><dt>Минимальный остаток</dt><dd>${product.minStock} ${C.esc(product.unit)}</dd></div><div><dt>Единица</dt><dd>${C.esc(product.unit)}</dd></div></dl><button class="ghost card-edit" data-edit-product="${C.esc(product.id)}">Изменить товар</button></div></article>`;
   }).join('') || empty('Добавьте первый товар', ADD_LABELS.products)}</div><p class="note">Отключённые товары остаются в истории заказов и склада, но их нельзя выбрать в новых операциях.</p>`;
 }
 
@@ -778,18 +832,25 @@ function warehouseView() {
   const inventory = ledgerInventory();
   const adjustmentButton = owner ? '<button type="button" class="primary stock-adjust-button" data-stock-adjust>Корректировать остаток</button>' : '';
   const recent = data.inventoryLedger.slice(0, 12);
-  return `<div class="warehouse-head"><div><p class="eyebrow">Append-only ledger</p><h2>Остатки из неизменяемого журнала</h2><p>Каждый выпуск, резерв заказа и ручная корректировка фиксируются отдельным движением.</p></div>${adjustmentButton}</div><div class="product-cards">${inventory.map(item => `<article class="stock-card stock-${stockLevel(item)}"><div class="cube">❄</div><h3>${C.esc(item.name)}</h3><b class="stock-big ${stockLevel(item) !== 'ok' ? 'danger' : ''}">${item.stock} <small>${C.esc(item.unit)}</small></b><div class="stock-line"><span>Произведено <b>${item.made}</b></span><span>Зарезервировано <b>${item.sold}</b></span><span>Корректировки <b>${item.adjustments}</b></span><span>Минимум <b>${item.minStock || 0}</b></span></div>${stockNotice(item) ? `<p class="alert">${C.esc(stockNotice(item))}</p>` : ''}</article>`).join('')}</div><article class="panel inventory-history"><div class="panel-head"><div><p class="eyebrow">Последние движения</p><h2>Журнал склада</h2></div></div>${table(['Дата', 'Товар', 'Источник', 'Изменение', 'Основание'], recent.map(item => `<tr><td>${dateTime(item.occurredAt)}</td><td><b>${C.esc(prod(item.product))}</b></td><td>${C.esc(inventoryMovementLabel(item))}</td><td class="${item.delta < 0 ? 'danger' : 'ok-text'}">${item.delta > 0 ? '+' : ''}${item.delta}</td><td>${C.esc(item.description || '—')}</td></tr>`).join(''))}</article><p class="note">Остаток — сумма движений. История не переписывается; отмена или исправление создаёт новое компенсирующее движение.</p>`;
+  return `<div class="warehouse-head"><div><p class="eyebrow">Append-only ledger</p><h2>Остатки из неизменяемого журнала</h2><p>Каждый выпуск, резерв заказа и ручная корректировка фиксируются отдельным движением.</p></div>${adjustmentButton}</div><div class="product-cards">${inventory.map(item => `<article class="stock-card stock-${stockLevel(item)}"><div class="cube">❄</div><h3>${C.esc(item.name)}</h3><b class="stock-big ${stockLevel(item) !== 'ok' ? 'danger' : ''}">${item.stock} <small>${C.esc(item.unit)}</small></b><div class="stock-line"><span>На складе <b>${item.onHand}</b></span><span>В резерве <b>${item.reserved}</b></span><span>Отгружено <b>${item.shipped}</b></span><span>Произведено <b>${item.made}</b></span><span>Корректировки <b>${item.adjustments}</b></span><span>Минимум <b>${item.minStock || 0}</b></span></div>${stockNotice(item) ? `<p class="alert">${C.esc(stockNotice(item))}</p>` : ''}</article>`).join('')}</div><article class="panel inventory-history"><div class="panel-head"><div><p class="eyebrow">Последние движения</p><h2>Журнал склада</h2></div></div>${table(['Дата', 'Товар', 'Источник', 'На складе', 'Резерв', 'Основание'], recent.map(item => `<tr><td>${dateTime(item.occurredAt)}</td><td><b>${C.esc(prod(item.product))}</b></td><td>${C.esc(inventoryMovementLabel(item))}</td><td class="${item.onHandDelta < 0 ? 'danger' : 'ok-text'}">${item.onHandDelta > 0 ? '+' : ''}${item.onHandDelta}</td><td class="${item.reservedDelta < 0 ? 'danger' : 'ok-text'}">${item.reservedDelta > 0 ? '+' : ''}${item.reservedDelta}</td><td>${C.esc(item.description || '—')}</td></tr>`).join(''))}</article><p class="note">Доступно = физический остаток минус резерв. История не переписывается; отмена или исправление создаёт новое компенсирующее движение.</p>`;
 }
 
 function inventoryMovementLabel(item) {
-  if (item.category === 'production') return 'Производство';
-  if (item.category === 'order') return item.delta < 0 ? 'Резерв заказа' : 'Освобождение резерва';
-  return 'Ручная корректировка';
+  return ({
+    production: 'Производство',
+    production_adjustment: 'Корректировка производства',
+    reservation: 'Резерв заказа',
+    reservation_release: 'Освобождение резерва',
+    shipment: 'Отгрузка',
+    return: 'Возврат',
+    manual_adjustment: 'Ручная корректировка',
+    migration: 'Перенос начального остатка'
+  })[item.movementType] || item.movementType || 'Движение';
 }
 
 function analyticsView() {
   const value = metrics();
-  const byProduct = catalogue().map(product => ({ name: product.name, total: data.orders.filter(order => order.product === product.id && order.status !== 'Отменён').reduce((sum, order) => sum + C.calcOrder(order).total, 0) }));
+  const byProduct = catalogue().map(product => ({ name: product.name, total: data.productSalesSummary.find(item => item.product === product.id)?.total || 0 }));
   const maximum = Math.max(1, ...byProduct.map(item => item.total));
   return `${cards()}<div class="grid2"><article class="panel"><h2>Продажи по ассортименту</h2><div class="bars">${byProduct.map(item => `<div><span>${C.esc(item.name)}</span><div><i style="width:${item.total / maximum * 100}%"></i></div><b>${C.money(item.total)}</b></div>`).join('')}</div></article><article class="panel"><h2>Финансовая сводка</h2><dl class="summary"><div><dt>Начисленная выручка</dt><dd>${C.money(value.sales)}</dd></div><div><dt>Поступившие оплаты</dt><dd>${C.money(value.paid)}</dd></div><div><dt>Дебиторская задолженность</dt><dd>${C.money(value.debt)}</dd></div><div><dt>Начисления сотрудникам</dt><dd>${C.money(value.wage)}</dd></div></dl><p class="note">Это управленческий учёт, не налоговая или бухгалтерская отчётность.</p></article></div>`;
 }
@@ -1026,7 +1087,7 @@ const schemas = {
     ['qty', 'Количество', 'number', 1],
     ['price', 'Цена за единицу, ₸', 'number', () => activeProducts()[0]?.price || 0],
     ['paid', 'Оплачено, ₸', 'number', 0],
-    ['status', 'Статус', 'select', ['Новый', 'В доставке', 'Выполнен', 'Отменён']]
+    ['status', 'Статус', 'select', ['Новый', 'Подтверждён', 'В производстве', 'Собирается', 'Готов', 'На доставке', 'Доставлен', 'Выполнен', 'Отменён']]
   ],
   clients: [
     ['name', 'Название / имя', 'text', ''],
@@ -1054,6 +1115,13 @@ const schemas = {
     ['paid', 'Выплачено', 'checkbox', false]
   ]
 };
+
+function activeSchema() {
+  const schema = schemas[section] || [];
+  return section === 'orders' && !manager
+    ? schema.filter(([name]) => !['price', 'paid'].includes(name))
+    : schema;
+}
 
 function genericField([name, label, type, initial, options = {}], record) {
   const aliases = { product: 'product', qty: 'qty', employeeId: 'employeeId', clientId: 'clientId', date: 'date', price: 'price', paid: 'paid', status: 'status', name: 'name', category: 'category', phone: 'phone', role: 'role', active: 'active' };
@@ -1104,7 +1172,7 @@ function openForm(record = null, dateKey = '') {
     openScheduleForm(record, dateKey);
     return;
   }
-  const schema = schemas[section];
+  const schema = activeSchema();
   if (!schema) return;
   if (['orders', 'production', 'accruals'].includes(section) && ((section === 'orders' && !data.clients.length) || (section !== 'orders' && !data.employees.some(employee => employee.active)))) {
     toast(section === 'orders' ? 'Сначала добавьте клиента' : 'Сначала добавьте сотрудника');
@@ -1125,7 +1193,7 @@ function openForm(record = null, dateKey = '') {
   if (section === 'orders') {
     const productSelect = $('#fields [name=product]');
     const priceInput = $('#fields [name=price]');
-    productSelect.onchange = () => { priceInput.value = String(activeProducts().find(product => product.id === productSelect.value)?.price || 0); };
+    if (priceInput) productSelect.onchange = () => { priceInput.value = String(activeProducts().find(product => product.id === productSelect.value)?.price || 0); };
   }
   $('#modal').showModal();
 }
@@ -1218,7 +1286,7 @@ async function saveRecord(form) {
     const raw = Object.fromEntries(new FormData(form));
     const delta = Number(raw.delta);
     if (delta < 0 && !window.confirm(`Списать со склада ${Math.abs(delta)} единиц? История сохранится в журнале.`)) return false;
-    const { error } = await supabase.rpc('record_inventory_adjustment', {
+    const { error } = await supabase.rpc('record_inventory_adjustment_rc', {
       p_idempotency_key: form.dataset.idempotencyKey,
       p_product_id: String(raw.product),
       p_quantity_delta: delta,
@@ -1230,7 +1298,7 @@ async function saveRecord(form) {
   if (section === 'products') return saveProduct(form);
   if (section === 'calendar') return saveSchedule(form);
   const raw = Object.fromEntries(new FormData(form));
-  (schemas[section] || []).forEach(([name, , type]) => {
+  activeSchema().forEach(([name, , type]) => {
     if (type === 'number') raw[name] = Number(raw[name]);
     if (type === 'checkbox') raw[name] = form.elements[name].checked;
   });
@@ -1247,24 +1315,29 @@ async function saveRecord(form) {
   if (section === 'orders') {
     const client = data.clients.find(item => item.id === raw.clientId);
     if (!client) throw new Error('Выберите клиента.');
-    const { error } = await supabase.rpc('save_order', {
+    const orderItems = [{
+      product_id: String(raw.product),
+      quantity: Number(raw.qty),
+      ...(manager ? { unit_price: Number(raw.price) } : {})
+    }];
+    const orderRpc = manager ? 'save_order_manager_rc' : 'save_order_operational_rc';
+    const orderArgs = {
       p_idempotency_key: form.dataset.idempotencyKey,
       p_order_id: editingRecord?.type === 'orders' ? editingRecord.id : null,
       p_order_date: raw.date,
       p_client_id: client.id,
-      p_product_id: raw.product,
-      p_quantity: raw.qty,
-      p_unit_price: raw.price,
-      p_paid_amount: raw.paid,
+      p_items: orderItems,
       p_status: raw.status
-    });
+    };
+    if (manager) orderArgs.p_paid_amount = Number(raw.paid);
+    const { error } = await supabase.rpc(orderRpc, orderArgs);
     if (error) throw error;
     return true;
   }
   if (section === 'production') {
     const employee = data.employees.find(item => item.id === raw.employeeId);
     if (!employee) throw new Error('Выберите сотрудника.');
-    const { error } = await supabase.rpc('save_production_entry', {
+    const { error } = await supabase.rpc('save_production_entry_rc', {
       p_idempotency_key: form.dataset.idempotencyKey,
       p_entry_id: editingRecord?.type === 'production' ? editingRecord.id : null,
       p_production_date: raw.date,
@@ -1371,7 +1444,7 @@ async function acceptWebsiteRequest(id, button) {
 
 async function retryNotification(id, button) {
   button.disabled = true;
-  const { error } = await supabase.rpc('retry_notification', { p_notification_id: id });
+  const { error } = await supabase.rpc('retry_notification_rc', { p_notification_id: id });
   if (error) {
     button.disabled = false;
     toast(friendlyError(error));
@@ -1460,7 +1533,7 @@ $('#public-order-form').onsubmit = async event => {
       response = await fetch(`${config.supabaseUrl}/functions/v1/public-order-request`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', apikey: config.supabasePublishableKey },
-        body: JSON.stringify({ customerName: String(raw.customer_name || '').trim(), phone: String(raw.phone || '').trim(), customerType: raw.customer_type, productId: raw.product_id, quantity: Number(raw.quantity), message: String(raw.message || '').trim(), website: String(raw.website || ''), startedAt: Number(raw.started_at) }),
+        body: JSON.stringify({ idempotencyKey: form.dataset.idempotencyKey, customerName: String(raw.customer_name || '').trim(), phone: String(raw.phone || '').trim(), customerType: raw.customer_type, productId: raw.product_id, quantity: Number(raw.quantity), message: String(raw.message || '').trim(), website: String(raw.website || ''), startedAt: Number(raw.started_at) }),
         signal: controller.signal
       });
     } finally {
@@ -1474,6 +1547,7 @@ $('#public-order-form').onsubmit = async event => {
     }
     form.reset();
     form.elements.started_at.value = String(Date.now());
+    form.dataset.idempotencyKey = crypto.randomUUID();
     message.textContent = 'Заявка отправлена. Сотрудник IceFresh свяжется с вами для подтверждения.';
   } catch (error) {
     message.textContent = error?.name === 'AbortError' ? 'Сервис отвечает слишком долго. Проверьте интернет и попробуйте снова.' : friendlyError(error);
@@ -1493,13 +1567,16 @@ $('#auth-form').onsubmit = async event => {
   const email = String(form.get('email')).trim();
   const password = String(form.get('password'));
   const fullName = String(form.get('full_name') || '').trim();
+  const inviteToken = String(form.get('invite_token') || '').trim();
   try {
     if (authMode === 'signin') {
       const { data: result, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
       await enter(result.session);
     } else {
-      const { data: result, error } = await supabase.auth.signUp({ email, password, options: { data: { full_name: fullName } } });
+      if (!/^[0-9a-f-]{36}$/i.test(inviteToken)) throw new Error('Код приглашения неверен или истёк.');
+      sessionStorage.setItem('icefresh-invite', inviteToken);
+      const { data: result, error } = await supabase.auth.signUp({ email, password, options: { data: { full_name: fullName, invite_token: inviteToken } } });
       if (error) throw error;
       if (result.session) await enter(result.session);
       else showMessage('#auth-message', 'Готово. Подтвердите email по ссылке в письме.');
@@ -1509,18 +1586,6 @@ $('#auth-form').onsubmit = async event => {
   } finally {
     submit.disabled = false;
   }
-};
-
-$('#create-org').onsubmit = async event => {
-  event.preventDefault();
-  showMessage('#onboarding-message', 'Создаю…');
-  const form = new FormData(event.target);
-  const { error } = await supabase.rpc('create_organization', { p_name: String(form.get('organization_name')), p_full_name: String(form.get('full_name')) });
-  if (error) {
-    showMessage('#onboarding-message', friendlyError(error), true);
-    return;
-  }
-  await enter(session, true);
 };
 
 $('#join-org').onsubmit = async event => {
@@ -1694,6 +1759,10 @@ $('#form').onsubmit = async event => {
 };
 
 $('#backup').onclick = () => {
+  if (!manager) {
+    toast('Резервная копия доступна только владельцу или администратору.');
+    return;
+  }
   const exportData = {
     version: 3,
     exportedAt: new Date().toISOString(),

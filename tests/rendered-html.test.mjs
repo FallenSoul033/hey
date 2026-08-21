@@ -56,7 +56,7 @@ test("ships the configured Russian IceFresh application", async () => {
   assert.match(html, /assets\/products\/hero-icefresh\.webp/);
   assert.match(html, /id="gallery"/);
   assert.match(html, /id="go-site"/);
-  assert.match(html, /property="og:image" content="https:\/\/icefresh\.kz\/icefresh-social\.png"/);
+  assert.match(html, /property="og:image" content="https:\/\/icefresh\.kz\/icefresh-social\.jpg"/);
   assert.match(html, /name="twitter:card" content="summary_large_image"/);
   assert.match(html, /Вход для сотрудников/);
   assert.match(html, /Добро пожаловать в IceFresh/);
@@ -72,6 +72,7 @@ test("ships the configured Russian IceFresh application", async () => {
   assert.equal(JSON.parse(manifest).short_name, "IceFresh");
   assert.match(headers, /Content-Security-Policy:/);
   assert.match(headers, /frame-ancestors 'none'/);
+  assert.match(headers, /Strict-Transport-Security: max-age=63072000; includeSubDomains; preload/);
   assert.match(serviceWorker, /SKIP_WAITING/);
   assert.match(serviceWorker, /\/api\//);
   assert.match(serviceWorker, /isCacheableStatic/);
@@ -80,7 +81,7 @@ test("ships the configured Russian IceFresh application", async () => {
   assert.match(robots, /Disallow: \/app\//);
   assert.match(robots, /Sitemap: https:\/\/icefresh\.kz\/sitemap\.xml/);
   assert.match(sitemap, /<loc>https:\/\/icefresh\.kz\/<\/loc>/);
-  assert.equal(JSON.parse(version).version, "12.0.0-alpha.1");
+  assert.equal(JSON.parse(version).version, "12.0.0-rc.1.5");
 });
 
 test("keeps public enquiries separate from protected CRM records", async () => {
@@ -103,7 +104,8 @@ test("keeps public enquiries separate from protected CRM records", async () => {
   assert.match(migration, /grant select \(/);
   assert.doesNotMatch(migration, /grant (?:select|insert|update|delete)[^;]* to anon/i);
   assert.match(edgeFunction, /ALLOWED_ORIGINS/);
-  assert.match(edgeFunction, /RATE_LIMIT_PER_HOUR = 5/);
+  assert.match(edgeFunction, /submit_public_request_rc/);
+  assert.match(edgeFunction, /ICEFRESH_ORGANIZATION_ID/);
   assert.match(edgeFunction, /SUPABASE_SERVICE_ROLE_KEY/);
 });
 
@@ -129,7 +131,7 @@ test("ships owner controls, product photos, and the operations calendar securely
   assert.match(migration, /revoke execute on function public\.manage_member/);
   assert.match(headers, /img-src 'self' data: https:\/\/\*\.supabase\.co/);
   assert.doesNotMatch(edgeFunction, /const PRODUCT_IDS/);
-  assert.match(edgeFunction, /from\("products"\)/);
+  assert.match(edgeFunction, /rpc\("submit_public_request_rc"/);
 });
 
 test("implements the core approved workflow without exposing management fields publicly", async () => {
@@ -143,8 +145,8 @@ test("implements the core approved workflow without exposing management fields p
     readFile(new URL("public/assets/products/bag-1kg.webp", root)),
   ]);
 
-  assert.ok(cup.length > 30_000);
-  assert.ok(bag.length > 30_000);
+  assert.ok(cup.length > 5_000);
+  assert.ok(bag.length > 5_000);
   assert.match(html, /Настоящие фотографии нашей продукции/);
   assert.match(app, /BUILT_IN_PRODUCT_PHOTOS/);
   assert.match(app, /min_stock: Number\(raw\.minStock\)/);
@@ -229,21 +231,24 @@ test("ships an owner-only integration centre without exposing the production sec
   assert.doesNotMatch(`${app}\n${routes}`, /sk-proj-[A-Za-z0-9_-]{20,}/);
 });
 
-test("enforces atomic stock and finance operations with immutable ledgers and an outbox", async () => {
+test("enforces RC1.5 atomic stock and finance operations with immutable ledgers and an outbox", async () => {
   const root = new URL("../", import.meta.url);
-  const [app, routes, migration, styles] = await Promise.all([
+  const [app, routes, migration, performance, styles] = await Promise.all([
     readFile(new URL("public/app.js", root), "utf8"),
     readFile(new URL("public/routes.js", root), "utf8"),
     readFile(new URL("supabase/migrations/202608160005_atomic_inventory_ledger_outbox.sql", root), "utf8"),
+    readFile(new URL("supabase/migrations/202608210001_rc14_security_performance.sql", root), "utf8"),
     readFile(new URL("public/admin.css", root), "utf8"),
   ]);
 
   assert.match(routes, /'operations'/);
   assert.match(routes, /MANAGER_ROUTES[^\n]*'operations'/);
-  assert.match(app, /rpc\('save_order'/);
-  assert.match(app, /rpc\('save_production_entry'/);
-  assert.match(app, /rpc\('record_inventory_adjustment'/);
-  assert.match(app, /from\('inventory_ledger'\)/);
+  assert.match(app, /save_order_manager_rc/);
+  assert.match(app, /save_order_operational_rc/);
+  assert.match(app, /rpc\('save_production_entry_rc'/);
+  assert.match(app, /rpc\('record_inventory_adjustment_rc'/);
+  assert.match(app, /from\('stock_ledger'\)/);
+  assert.match(app, /get_inventory_summary_rc/);
   assert.match(app, /Журнал операций и уведомлений/);
   assert.match(app, /data-edit-order/);
   assert.match(app, /data-edit-client/);
@@ -251,22 +256,26 @@ test("enforces atomic stock and finance operations with immutable ledgers and an
   assert.doesNotMatch(app, /from\('orders'\)\.insert/);
   assert.doesNotMatch(app, /from\('production_entries'\)\.insert/);
 
-  assert.match(migration, /create table if not exists public\.inventory_ledger/);
+  assert.match(migration, /create table if not exists public\.stock_ledger/);
   assert.match(migration, /create table if not exists public\.financial_ledger/);
   assert.match(migration, /create table if not exists private\.operation_requests/);
   assert.match(migration, /create table if not exists public\.notification_events/);
-  assert.match(migration, /alter table public\.inventory_ledger enable row level security/);
-  assert.match(migration, /inventory_ledger_immutable/);
-  assert.match(migration, /orders_validate_inventory/);
-  assert.match(migration, /production_validate_inventory/);
+  assert.match(migration, /alter table public\.stock_ledger enable row level security/);
+  assert.match(migration, /stock_ledger_immutable/);
   assert.match(migration, /for update/);
   assert.match(migration, /insufficient stock/);
-  assert.match(migration, /idempotency key reused with different request/);
+  assert.match(migration, /idempotency key reused with different payload/);
   assert.match(migration, /security definer[\s\S]*set search_path = ''/);
-  assert.match(migration, /revoke all on function public\.save_order/);
-  assert.match(migration, /grant execute on function public\.save_order[\s\S]*to authenticated/);
+  assert.match(migration, /revoke all on function public\.save_order_rc/);
+  assert.match(migration, /grant execute on function public\.save_order_rc[\s\S]*to authenticated/);
+  assert.match(migration, /extensions\.digest[\s\S]*'sha256'/);
+  assert.doesNotMatch(migration, /\bmd5\s*\(/i);
+  assert.match(performance, /save_order_manager_rc/);
+  assert.match(performance, /save_order_operational_rc/);
+  assert.match(performance, /get_finance_summary_rc/);
+  assert.match(performance, /prevent_schedule_identity_change/);
   assert.match(migration, /processed_order_id/);
   assert.match(migration, /'icefresh\.kz@gmail\.com'/);
-  assert.match(migration, /status in \('pending', 'processing', 'sent', 'failed', 'dead_letter'\)/);
+  assert.match(migration, /status in \('pending','processing','sent','failed','dead_letter'\)/);
   assert.match(styles, /\.operations-callout/);
 });

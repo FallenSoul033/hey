@@ -13,6 +13,12 @@ const context = {
   inventory: [{ product: "Лёд в стакане 250 г", stock: 20, minimumStock: 30 }],
 };
 
+const serviceEnv = {
+  SUPABASE_URL: "https://example.supabase.co",
+  SUPABASE_PUBLISHABLE_KEY: "test-publishable-key",
+  OPENAI_API_KEY: "test-only-key",
+};
+
 function request(token = "valid-token", body = { message: "Что требует внимания?", context }) {
   return new Request("https://icefresh.kz/api/ai-assistant", {
     method: "POST",
@@ -28,7 +34,7 @@ test("AI endpoint rejects unauthenticated callers before any outbound request", 
   const worker = await loadWorker();
   let calls = 0;
   const response = await worker.fetch(request(""), {
-    OPENAI_API_KEY: "test-only-key",
+    ...serviceEnv,
     __TEST_FETCH__: async () => {
       calls += 1;
       return new Response(null, { status: 500 });
@@ -43,7 +49,7 @@ test("AI endpoint gives active staff a role-restricted operational assistant", a
   const worker = await loadWorker();
   let openAIBody;
   const response = await worker.fetch(request(), {
-    OPENAI_API_KEY: "test-only-key",
+    ...serviceEnv,
     __TEST_FETCH__: async (input, init = {}) => {
       const url = String(input);
       if (url.includes("/auth/v1/user")) return Response.json({ id: "staff-1" });
@@ -69,7 +75,7 @@ test("AI endpoint lets an owner request a bounded, non-stored response", async (
   const worker = await loadWorker();
   let openAIBody;
   const response = await worker.fetch(request(), {
-    OPENAI_API_KEY: "test-only-key",
+    ...serviceEnv,
     __TEST_FETCH__: async (input, init = {}) => {
       const url = String(input);
       if (url.includes("/auth/v1/user")) return Response.json({ id: "owner-1" });
@@ -99,7 +105,7 @@ test("AI endpoint enforces the persistent hourly limit before calling OpenAI", a
   const worker = await loadWorker();
   let openAICalled = false;
   const response = await worker.fetch(request("valid-token", { message: "Покажи сводку.", context }), {
-    OPENAI_API_KEY: "test-only-key",
+    ...serviceEnv,
     __TEST_FETCH__: async (input) => {
       const url = String(input);
       if (url.includes("/auth/v1/user")) return Response.json({ id: "owner-limit" });
@@ -120,7 +126,7 @@ test("AI endpoint enforces the shared monthly organization limit", async () => {
   const worker = await loadWorker();
   let openAICalled = false;
   const response = await worker.fetch(request("valid-token", { message: "Покажи задачи.", context }), {
-    OPENAI_API_KEY: "test-only-key",
+    ...serviceEnv,
     __TEST_FETCH__: async (input) => {
       const url = String(input);
       if (url.includes("/auth/v1/user")) return Response.json({ id: "staff-monthly" });
@@ -140,7 +146,7 @@ test("AI endpoint enforces the shared monthly organization limit", async () => {
 test("AI endpoint bounds abusive or unexpectedly large input", async () => {
   const worker = await loadWorker();
   const response = await worker.fetch(request("valid-token", { message: "x".repeat(2_000), context }), {
-    OPENAI_API_KEY: "test-only-key",
+    ...serviceEnv,
     __TEST_FETCH__: async (input) => {
       const url = String(input);
       if (url.includes("/auth/v1/user")) return Response.json({ id: "owner-2" });

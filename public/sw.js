@@ -1,4 +1,4 @@
-const CACHE_NAME = 'icefresh-v20';
+const CACHE_NAME = 'icefresh-v12-rc15';
 const APP_SHELL = '/';
 const PRECACHE = [
   '/',
@@ -9,14 +9,7 @@ const PRECACHE = [
   '/routes.js',
   '/app.js',
   '/config.js',
-  '/assets/logo-data.js',
-  '/assets/products/hero-icefresh.webp',
-  '/assets/products/cup-250.webp',
-  '/assets/products/bag-1kg.webp',
-  '/assets/products/bag-2kg.webp',
-  '/assets/products/gallery-cups.webp',
-  '/assets/products/gallery-pack.webp',
-  '/assets/products/gallery-ice.webp',
+  '/assets/logo.webp',
   '/manifest.webmanifest',
   '/icon.svg',
   '/version.json'

@@ -1,5 +1,3 @@
-const SUPABASE_URL = "https://ogjfqnbgauuhbmauioea.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_kqtQbr4uqtbFVWkfNFuBvg_cqO-gKWw";
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 const DEFAULT_MODEL = "gpt-5.6-luna";
 const MAX_REQUEST_CHARS = 16_000;
@@ -11,6 +9,8 @@ const REQUESTS_PER_HOUR = 12;
 type OutboundFetch = typeof fetch;
 
 export interface AiAssistantEnv {
+  SUPABASE_URL?: string;
+  SUPABASE_PUBLISHABLE_KEY?: string;
   OPENAI_API_KEY?: string;
   OPENAI_API_KEY_CIPHERTEXT?: string;
   OPENAI_API_KEY_PRIVATE_JWK?: string;
@@ -53,13 +53,15 @@ function bearerToken(request: Request): string | null {
 async function verifyActiveUser(
   request: Request,
   outboundFetch: OutboundFetch,
+  supabaseUrl: string,
+  publishableKey: string,
 ): Promise<{ userId: string; profile: ActiveProfile; token: string } | Response> {
   const token = bearerToken(request);
   if (!token) return json({ error: "Войдите в CRM заново." }, 401);
 
-  const authResponse = await outboundFetch(`${SUPABASE_URL}/auth/v1/user`, {
+  const authResponse = await outboundFetch(`${supabaseUrl}/auth/v1/user`, {
     headers: {
-      apikey: SUPABASE_PUBLISHABLE_KEY,
+      apikey: publishableKey,
       Authorization: `Bearer ${token}`,
     },
   });
@@ -70,13 +72,13 @@ async function verifyActiveUser(
     return json({ error: "Не удалось проверить пользователя." }, 401);
   }
 
-  const profileUrl = new URL(`${SUPABASE_URL}/rest/v1/profiles`);
+  const profileUrl = new URL(`${supabaseUrl}/rest/v1/profiles`);
   profileUrl.searchParams.set("select", "id,organization_id,role,active");
   profileUrl.searchParams.set("id", `eq.${user.id}`);
   profileUrl.searchParams.set("limit", "1");
   const profileResponse = await outboundFetch(profileUrl, {
     headers: {
-      apikey: SUPABASE_PUBLISHABLE_KEY,
+      apikey: publishableKey,
       Authorization: `Bearer ${token}`,
       Accept: "application/json",
     },
@@ -114,11 +116,13 @@ function reserveRequest(key: string): { allowed: true } | { allowed: false; retr
 async function reservePersistentRequest(
   access: { userId: string; profile: ActiveProfile; token: string },
   outboundFetch: OutboundFetch,
+  supabaseUrl: string,
+  publishableKey: string,
 ): Promise<{ allowed: true } | { allowed: false; reason?: "hourly" | "monthly" | "denied"; retryAfter?: number; unavailable?: true }> {
-  const reserveResponse = await outboundFetch(`${SUPABASE_URL}/rest/v1/rpc/reserve_ai_request`, {
+  const reserveResponse = await outboundFetch(`${supabaseUrl}/rest/v1/rpc/reserve_ai_request`, {
     method: "POST",
     headers: {
-      apikey: SUPABASE_PUBLISHABLE_KEY,
+      apikey: publishableKey,
       Authorization: `Bearer ${access.token}`,
       Accept: "application/json",
       "Content-Type": "application/json",
@@ -207,9 +211,15 @@ export async function handleAiAssistant(request: Request, env: AiAssistantEnv): 
   }
 
   const outboundFetch = env.__TEST_FETCH__ ?? fetch;
+  if (!bearerToken(request)) return json({ error: "Войдите в CRM заново." }, 401);
+  const supabaseUrl = env.SUPABASE_URL?.trim() ?? "";
+  const publishableKey = env.SUPABASE_PUBLISHABLE_KEY?.trim() ?? "";
+  if (!/^https:\/\/[a-z0-9]+\.supabase\.co$/i.test(supabaseUrl) || !publishableKey) {
+    return json({ error: "AI‑ассистент пока не настроен." }, 503);
+  }
   let access: { userId: string; profile: ActiveProfile; token: string } | Response;
   try {
-    access = await verifyActiveUser(request, outboundFetch);
+    access = await verifyActiveUser(request, outboundFetch, supabaseUrl, publishableKey);
   } catch {
     return json({ error: "Сервис авторизации временно недоступен." }, 503);
   }
@@ -252,7 +262,7 @@ export async function handleAiAssistant(request: Request, env: AiAssistantEnv): 
 
   let persistentLimit: Awaited<ReturnType<typeof reservePersistentRequest>>;
   try {
-    persistentLimit = await reservePersistentRequest(access, outboundFetch);
+    persistentLimit = await reservePersistentRequest(access, outboundFetch, supabaseUrl, publishableKey);
   } catch {
     return json({ error: "Не удалось проверить лимит AI‑запросов." }, 503);
   }
