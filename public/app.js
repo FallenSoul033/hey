@@ -2,7 +2,7 @@
 const C = IceCore;
 const R = IceRoutes;
 const SDK_VERSION = '2.111.0';
-const APP_VERSION = '12.0.0-rc.1.5';
+const APP_VERSION = '12.0.0';
 const PRODUCT_IMAGE_BUCKET = 'product-images';
 const BUILT_IN_PRODUCT_PHOTOS = {
   cup250: '/assets/products/cup-250.webp',

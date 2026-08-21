@@ -1,4 +1,4 @@
-const CACHE_NAME = 'icefresh-v12-rc15';
+const CACHE_NAME = 'icefresh-v12-production';
 const APP_SHELL = '/';
 const PRECACHE = [
   '/',
