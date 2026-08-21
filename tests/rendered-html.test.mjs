@@ -70,8 +70,9 @@ test("ships the configured Russian IceFresh application", async () => {
   assert.match(html, /id="global-search"/);
   assert.match(html, /id="app-version"/);
   assert.match(html, /href="\/manifest\.webmanifest"/);
-  assert.match(html, /src="\/app\.js\?v=12\.0\.0"/);
-  assert.match(html, /src="\/routes\.js\?v=12\.0\.0"/);
+  assert.match(html, /src="\/app\.js\?v=12\.0\.0-3d"/);
+  assert.match(html, /src="\/routes\.js\?v=12\.0\.0-3d"/);
+  assert.match(html, /href="\/public-site\.css\?v=12\.0\.0-3d"/);
   assert.match(config, /https:\/\/ogjfqnbgauuhbmauioea\.supabase\.co/);
   assert.doesNotMatch(config, /sb_secret_|service_role\s*:/i);
   assert.equal(JSON.parse(manifest).short_name, "IceFresh");
