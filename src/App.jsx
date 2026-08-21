@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  archiveOrder, loadAuditTrail, loadCatalog, loadCurrentProfile, loadEvents,
-  loadFinanceSummary, loadOrders, saveOrder, signIn, signOut,
+  archiveOrder, loadAuditTrail, loadCatalog, loadCurrentProfile, loadEventDetail,
+  loadEvents, loadFinanceSummary, loadOrders, saveOrder, signIn, signOut,
 } from './api.js'
 import {
   canArchiveOrder, eventLabel, formatDate, formatMoney, isManager, statusOptions,
@@ -27,6 +27,9 @@ function App() {
 
   if (profile === undefined) return <div className="center"><div className="spinner" /><b>IceFresh</b><span>Загрузка…</span></div>
   if (!profile) return <Login onDone={async () => setProfile(await loadCurrentProfile())} />
+  if (!profile.active || profile.role === 'pending' || !profile.organization_id) {
+    return <PendingAccess profile={profile} onExit={async () => { await signOut(); setProfile(null) }} />
+  }
 
   const nav = NAV.filter(([id]) => id !== 'events' || isManager(profile.role))
   return (
@@ -79,6 +82,15 @@ function Login({ onDone }) {
     {error && <div className="error">{error}</div>}
     <button className="primary" disabled={busy}>{busy ? 'Входим…' : 'Войти'}</button>
   </form></div>
+}
+
+function PendingAccess({ profile, onExit }) {
+  return <div className="login-wrap"><section className="login-card pending-card">
+    <div className="login-logo">❄</div><h1>Доступ ожидает подтверждения</h1>
+    <p>{profile.full_name || profile.email}, аккаунт создан, но роль в IceFresh ещё не назначена.</p>
+    <div className="warning"><b>Рабочие данные пока закрыты</b><span>Владелец или администратор должен добавить пользователя в организацию и назначить роль.</span></div>
+    <button className="secondary" onClick={onExit}>Выйти</button>
+  </section></div>
 }
 
 function Dashboard({ profile, goOrders }) {
@@ -247,6 +259,7 @@ function Events({ profile }) {
   const [selected, setSelected] = useState(null)
   const [audit, setAudit] = useState([])
   const [loading, setLoading] = useState(true)
+  const [detailLoading, setDetailLoading] = useState(false)
   const [error, setError] = useState('')
   const refresh = useCallback(async () => {
     setLoading(true); setError('')
@@ -255,22 +268,39 @@ function Events({ profile }) {
     finally { setLoading(false) }
   }, [profile])
   useEffect(() => { refresh() }, [refresh])
+
   async function openInfo(item) {
-    setSelected(item); setAudit([])
-    try { setAudit(await loadAuditTrail(item.entity_id)) } catch (e) { console.error(e) }
+    setDetailLoading(true); setAudit([])
+    try {
+      const [detail, trail] = await Promise.all([
+        loadEventDetail(item.source, item.event_id),
+        item.entity_id ? loadAuditTrail(item.entity_id) : Promise.resolve([]),
+      ])
+      setSelected(detail)
+      setAudit(trail)
+    } catch (e) {
+      setError(e.message || 'Не удалось получить подробности события')
+    } finally {
+      setDetailLoading(false)
+    }
   }
+
   return <section className="stack">
     <Heading title="События системы" text="Подробный журнал действий и изменений" action={<button className="secondary" onClick={refresh}>↻ Обновить</button>} />
     {error && <div className="error">{error}</div>}
-    <div className="panel no-pad">{loading ? <div className="empty">Загрузка…</div> : !events.length ? <div className="empty">Событий пока нет</div> : <div className="event-list">{events.map((item) => <article className="event" key={item.id}><span className={`dot ${item.severity}`} /><div><b>{eventLabel(item.event_type)}</b><p>{item.message}</p><small>{formatDate(item.occurred_at, true)} · {item.entity_type}{item.entity_id ? ` · ${item.entity_id.slice(0, 8)}` : ''}</small></div><button className="info" onClick={() => openInfo(item)}>Информация</button></article>)}</div>}</div>
+    <div className="panel no-pad">{loading ? <div className="empty">Загрузка…</div> : !events.length ? <div className="empty">Событий пока нет</div> : <div className="event-list">{events.map((item) => <article className="event" key={`${item.source}-${item.event_id}`}><span className={`dot sev-${item.severity}`} /><div><b>{eventLabel(item.event_type)}</b><p>{item.message}</p><small>{formatDate(item.occurred_at, true)} · {item.actor_name || 'Система'} · {item.entity_type}{item.entity_id ? ` · ${item.entity_id.slice(0, 8)}` : ''}</small></div><button className="info" disabled={detailLoading} onClick={() => openInfo(item)}>{detailLoading ? 'Загрузка…' : 'Информация'}</button></article>)}</div>}</div>
     {selected && <EventInfo item={selected} audit={audit} onClose={() => setSelected(null)} />}
   </section>
 }
 
 function EventInfo({ item, audit, onClose }) {
+  const changed = item.changed_fields || []
   return <Modal title="Информация о событии" onClose={onClose} wide>
-    <div className="details"><Detail k="Событие" v={eventLabel(item.event_type)} /><Detail k="Время" v={formatDate(item.occurred_at, true)} /><Detail k="Сущность" v={item.entity_type} /><Detail k="ID сущности" v={item.entity_id || '—'} /><Detail k="Request ID" v={item.request_id || '—'} /><Detail k="Уровень" v={item.severity} /></div>
-    <div className="subsection"><b>Детали действия</b><pre>{JSON.stringify(item.details || {}, null, 2)}</pre></div>
+    <div className="details"><Detail k="Источник" v={item.source || '—'} /><Detail k="Событие" v={eventLabel(item.event_type)} /><Detail k="Время" v={formatDate(item.occurred_at, true)} /><Detail k="Исполнитель" v={item.actor_name || 'Система'} /><Detail k="Сущность" v={item.entity_type || '—'} /><Detail k="ID сущности" v={item.entity_id || '—'} />{item.request_id && <Detail k="Request ID" v={item.request_id} />}{item.severity && <Detail k="Уровень" v={item.severity} />}</div>
+    {item.details && <div className="subsection"><b>Детали действия</b><pre>{JSON.stringify(item.details, null, 2)}</pre></div>}
+    {changed.length > 0 && <div className="subsection"><b>Изменённые поля</b><p className="muted">{changed.join(', ')}</p></div>}
+    {item.before && <div className="subsection"><b>До изменения</b><pre>{JSON.stringify(item.before, null, 2)}</pre></div>}
+    {item.after && <div className="subsection"><b>После изменения</b><pre>{JSON.stringify(item.after, null, 2)}</pre></div>}
     <div className="subsection"><b>История изменений записи</b>{!audit.length ? <p className="muted">Связанных audit-записей нет.</p> : audit.map((row) => <article className="audit" key={row.id}><div><b>{row.operation} · {row.table_name}</b><span>{formatDate(row.occurred_at, true)}</span></div><p>Изменены поля: {(row.changed_fields || []).join(', ') || '—'}</p>{row.before_data && <details><summary>До изменения</summary><pre>{JSON.stringify(row.before_data, null, 2)}</pre></details>}{row.after_data && <details><summary>После изменения</summary><pre>{JSON.stringify(row.after_data, null, 2)}</pre></details>}</article>)}</div>
   </Modal>
 }
