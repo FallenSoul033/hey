@@ -78,12 +78,14 @@ export async function loadFinanceSummary(profile) {
 
 export async function loadEvents(profile) {
   if (!isManager(profile.role)) return []
-  const data = throwIfError(await supabase
-    .from('operation_events')
-    .select('id,severity,event_type,entity_type,entity_id,message,details,request_id,created_by,occurred_at')
-    .order('occurred_at', { ascending: false })
-    .limit(200))
-  return data || []
+  return throwIfError(await supabase.rpc('list_system_events_rc', { p_limit: 200 })) || []
+}
+
+export async function loadEventDetail(source, eventId) {
+  return throwIfError(await supabase.rpc('get_system_event_detail_rc', {
+    p_source: source,
+    p_event_id: eventId,
+  }))
 }
 
 export async function loadAuditTrail(recordId) {
