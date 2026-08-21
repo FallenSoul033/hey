@@ -1,14 +1,14 @@
-const CACHE_NAME = 'icefresh-v12-3d-production';
+const CACHE_NAME = 'icefresh-v12-3d2-production';
 const APP_SHELL = '/';
 const PRECACHE = [
   '/',
-  '/styles.css?v=12.0.0-3d',
-  '/admin.css?v=12.0.0-3d',
-  '/public-site.css?v=12.0.0-3d',
-  '/core.js?v=12.0.0-3d',
-  '/routes.js?v=12.0.0-3d',
-  '/app.js?v=12.0.0-3d',
-  '/config.js?v=12.0.0-3d',
+  '/styles.css?v=12.0.0-3d2',
+  '/admin.css?v=12.0.0-3d2',
+  '/public-site.css?v=12.0.0-3d2',
+  '/core.js?v=12.0.0-3d2',
+  '/routes.js?v=12.0.0-3d2',
+  '/app.js?v=12.0.0-3d2',
+  '/config.js?v=12.0.0-3d2',
   '/assets/logo.webp',
   '/manifest.webmanifest',
   '/icon.svg',
