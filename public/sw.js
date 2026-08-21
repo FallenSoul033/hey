@@ -10,7 +10,7 @@ const PRECACHE = [
   '/app.js?v=12.0.0-3d2',
   '/config.js?v=12.0.0-3d2',
   '/assets/logo.webp',
-  '/manifest.webmanifest',
+  '/manifest.webmanifest?v=12.0.0-3d2',
   '/icon.svg',
   '/version.json'
 ];

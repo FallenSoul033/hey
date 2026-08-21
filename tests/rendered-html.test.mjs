@@ -69,13 +69,14 @@ test("ships the configured Russian IceFresh application", async () => {
   assert.match(html, /id="pwa-update"/);
   assert.match(html, /id="global-search"/);
   assert.match(html, /id="app-version"/);
-  assert.match(html, /href="\/manifest\.webmanifest"/);
+  assert.match(html, /href="\/manifest\.webmanifest\?v=12\.0\.0-3d2"/);
   assert.match(html, /src="\/app\.js\?v=12\.0\.0-3d2"/);
   assert.match(html, /src="\/routes\.js\?v=12\.0\.0-3d2"/);
   assert.match(html, /href="\/public-site\.css\?v=12\.0\.0-3d2"/);
   assert.match(config, /https:\/\/ogjfqnbgauuhbmauioea\.supabase\.co/);
   assert.doesNotMatch(config, /sb_secret_|service_role\s*:/i);
   assert.equal(JSON.parse(manifest).short_name, "IceFresh");
+  assert.equal(JSON.parse(manifest).theme_color, "#06141b");
   assert.match(headers, /Content-Security-Policy:/);
   assert.match(headers, /frame-ancestors 'none'/);
   assert.match(headers, /Strict-Transport-Security: max-age=63072000; includeSubDomains; preload/);
