@@ -6,10 +6,13 @@ import {
 import {
   canArchiveOrder, eventLabel, formatDate, formatMoney, isManager, statusOptions,
 } from './domain.js'
+import { InventoryPage, ProductionPage } from './Operations.jsx'
 
 const NAV = [
   ['dashboard', '⌂', 'Обзор'],
   ['orders', '▤', 'Заказы'],
+  ['production', '◈', 'Производство'],
+  ['inventory', '▦', 'Склад'],
   ['events', '◎', 'События системы'],
 ]
 
@@ -57,6 +60,8 @@ function App() {
         <div className="content">
           {page === 'dashboard' && <Dashboard profile={profile} goOrders={() => setPage('orders')} />}
           {page === 'orders' && <Orders profile={profile} />}
+          {page === 'production' && <ProductionPage />}
+          {page === 'inventory' && <InventoryPage profile={profile} />}
           {page === 'events' && isManager(profile.role) && <Events profile={profile} />}
         </div>
       </main>
