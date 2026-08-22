@@ -62,13 +62,14 @@ jobs:
           install_skill frontend-design
           install_skill 3d-web-experience
           install_skill scroll-experience
+          install_skill frontend-slides
 
           git push origin HEAD:main
 
       - name: Verify installed skills
         run: |
           set -euo pipefail
-          for skill in ui-ux-pro-max frontend-design 3d-web-experience scroll-experience; do
+          for skill in ui-ux-pro-max frontend-design 3d-web-experience scroll-experience frontend-slides; do
             test -f ".agents/skills/$skill/SKILL.md"
             echo "OK: $skill"
           done
