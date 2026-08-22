@@ -1,0 +1,101 @@
+name: Install Marketing Skills
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/install-marketing-skills.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  install-skills:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout IceFresh repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Clone marketing skills source
+        run: |
+          git clone --depth 1 https://github.com/FallenSoul033/marketingskills.git /tmp/marketingskills
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Install skills sequentially
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agents/skills
+
+          install_skill() {
+            skill="$1"
+            src="/tmp/marketingskills/skills/$skill"
+            dst=".agents/skills/$skill"
+
+            test -f "$src/SKILL.md"
+            rm -rf "$dst"
+            cp -R "$src" "$dst"
+
+            find "$dst" -type d -name '__pycache__' -prune -exec rm -rf {} + || true
+            find "$dst" -type f \( -name '*.pyc' -o -name '.DS_Store' \) -delete || true
+
+            git add "$dst"
+            if git diff --cached --quiet; then
+              echo "$skill already up to date"
+            else
+              git commit -m "chore(skills): install $skill"
+            fi
+          }
+
+          install_skill product-marketing
+          install_skill marketing-plan
+          install_skill customer-research
+          install_skill competitor-profiling
+          install_skill offers
+          install_skill pricing
+          install_skill copywriting
+          install_skill sales-enablement
+          install_skill prospecting
+          install_skill cold-email
+          install_skill seo-audit
+          install_skill site-architecture
+          install_skill schema
+          install_skill ai-seo
+          install_skill analytics
+          install_skill cro
+          install_skill ab-testing
+
+          git push origin HEAD:main
+
+      - name: Verify installed skills
+        shell: bash
+        run: |
+          set -euo pipefail
+          for skill in \
+            product-marketing \
+            marketing-plan \
+            customer-research \
+            competitor-profiling \
+            offers \
+            pricing \
+            copywriting \
+            sales-enablement \
+            prospecting \
+            cold-email \
+            seo-audit \
+            site-architecture \
+            schema \
+            ai-seo \
+            analytics \
+            cro \
+            ab-testing; do
+            test -f ".agents/skills/$skill/SKILL.md"
+            echo "OK: $skill"
+          done
