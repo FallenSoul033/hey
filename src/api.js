@@ -1,5 +1,6 @@
 import { supabase } from './supabase.js'
 import { isManager } from './domain.js'
+import { isMissingAuthSession } from './authDomain.js'
 
 function throwIfError(result) {
   if (result.error) throw result.error
@@ -16,7 +17,10 @@ export async function signOut() {
 
 export async function loadCurrentProfile() {
   const { data: authData, error: authError } = await supabase.auth.getUser()
-  if (authError) throw authError
+  if (authError) {
+    if (isMissingAuthSession(authError)) return null
+    throw authError
+  }
   if (!authData.user) return null
 
   const { data, error } = await supabase
