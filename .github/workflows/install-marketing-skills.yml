@@ -99,6 +99,10 @@ jobs:
           install_skill copy-editing
           install_skill competitors
 
+          install_skill popups
+          install_skill signup
+          install_skill sms
+
           git push origin HEAD:main
 
       - name: Verify installed skills
@@ -146,7 +150,10 @@ jobs:
             marketing-psychology \
             launch \
             copy-editing \
-            competitors; do
+            competitors \
+            popups \
+            signup \
+            sms; do
             test -f ".agents/skills/$skill/SKILL.md"
             echo "OK: $skill"
           done
