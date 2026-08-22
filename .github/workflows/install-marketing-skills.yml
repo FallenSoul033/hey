@@ -90,6 +90,15 @@ jobs:
           install_skill marketing-council
           install_skill marketing-ideas
 
+          install_skill attribution
+          install_skill revops
+          install_skill emails
+          install_skill marketing-loops
+          install_skill marketing-psychology
+          install_skill launch
+          install_skill copy-editing
+          install_skill competitors
+
           git push origin HEAD:main
 
       - name: Verify installed skills
@@ -129,7 +138,15 @@ jobs:
             public-relations \
             influencer-marketing \
             marketing-council \
-            marketing-ideas; do
+            marketing-ideas \
+            attribution \
+            revops \
+            emails \
+            marketing-loops \
+            marketing-psychology \
+            launch \
+            copy-editing \
+            competitors; do
             test -f ".agents/skills/$skill/SKILL.md"
             echo "OK: $skill"
           done
