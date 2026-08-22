@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - qa/rc1.6-independent-verification
+  pull_request:
+    branches:
+      - canonical/sites-rc1.6-qa-candidate
   workflow_dispatch:
 
 permissions:
