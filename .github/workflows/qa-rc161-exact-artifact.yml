@@ -1,0 +1,84 @@
+name: QA RC1.6.1 Exact Artifact Retest
+
+on:
+  pull_request:
+    branches:
+      - canonical/sites-rc1.6.1-blocker4-security-candidate
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exact-artifact-retest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout QA harness only
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22.16.0
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+
+      - name: Download exact candidate and verify size/hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf qa-artifact candidate.zip
+          EXPECTED_SIZE='2176857'
+          EXPECTED_SHA='9cfec531d6b5a61fa677921d7078454a96af95320ccf9b2202095df9d177656e'
+          FILE_ID='1SLTcbqzZ6EMzuWI4CJf8719T0k_2Ms2f'
+          URL="https://drive.usercontent.google.com/download?id=${FILE_ID}&export=download&confirm=t"
+          curl -fL --retry 3 --retry-delay 2 --connect-timeout 20 "$URL" -o candidate.zip || true
+          ACTUAL_SIZE="$(stat -c%s candidate.zip 2>/dev/null || echo 0)"
+          if [ "$ACTUAL_SIZE" != "$EXPECTED_SIZE" ]; then
+            rm -f candidate.zip
+            python -m pip install --disable-pip-version-check -q gdown
+            gdown "https://drive.google.com/uc?id=${FILE_ID}" -O candidate.zip
+          fi
+          test "$(stat -c%s candidate.zip)" = "$EXPECTED_SIZE"
+          ACTUAL_SHA="$(sha256sum candidate.zip | awk '{print $1}')"
+          echo "artifact_sha256=$ACTUAL_SHA"
+          test "$ACTUAL_SHA" = "$EXPECTED_SHA"
+          unzip -tq candidate.zip
+          mkdir qa-artifact
+          unzip -q candidate.zip -d qa-artifact
+          test "$(node -p "require('./qa-artifact/package.json').version")" = '12.0.0-rc.1.6'
+          test "$(node -p "require('./qa-artifact/package-lock.json').version")" = '12.0.0-rc.1.6'
+          test "$(node -p "require('./qa-artifact/package-lock.json').packages[''].version")" = '12.0.0-rc.1.6'
+
+      - name: Clean dependency install
+        working-directory: qa-artifact
+        run: npm ci --no-audit --no-fund
+
+      - name: Lint
+        working-directory: qa-artifact
+        run: npm run lint
+
+      - name: TypeScript typecheck
+        working-directory: qa-artifact
+        run: npx tsc --noEmit
+
+      - name: JavaScript syntax checks
+        working-directory: qa-artifact
+        run: |
+          node --check public/app.js
+          node --check public/routes.js
+          node --check public/core.js
+          node --check public/sw.js
+
+      - name: Full build
+        working-directory: qa-artifact
+        run: npm run build
+
+      - name: Build output existence
+        working-directory: qa-artifact
+        run: |
+          test -f dist/server/index.js
+          test -f dist/server/wrangler.json
+
+      - name: Full automated tests including build-dependent suites
+        working-directory: qa-artifact
+        run: node --test tests/*.test.mjs
