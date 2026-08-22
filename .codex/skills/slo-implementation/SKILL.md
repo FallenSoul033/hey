@@ -200,6 +200,8 @@ groups:
   - name: slo_alerts
     interval: 1m
     rules:
+      # Fast burn: 14.4x rate, 1 hour window
+      # Consumes 2% error budget in 1 hour
       - alert: SLOErrorBudgetBurnFast
         expr: |
           slo:http_availability:burn_rate_1h > 14.4
@@ -212,6 +214,8 @@ groups:
           summary: "Fast error budget burn detected"
           description: "Error budget burning at {{ $value }}x rate"
 
+      # Slow burn: 6x rate, 6 hour window
+      # Consumes 5% error budget in 6 hours
       - alert: SLOErrorBudgetBurnSlow
         expr: |
           slo:http_availability:burn_rate_6h > 6
@@ -224,6 +228,7 @@ groups:
           summary: "Slow error budget burn detected"
           description: "Error budget burning at {{ $value }}x rate"
 
+      # Error budget exhausted
       - alert: SLOErrorBudgetExhausted
         expr: slo:http_availability:error_budget_remaining < 0
         for: 5m
@@ -257,13 +262,24 @@ groups:
 **Example Queries:**
 
 ```promql
+# Current SLO compliance
 sli:http_availability:ratio * 100
+
+# Error budget remaining
 slo:http_availability:error_budget_remaining
+
+# Days until error budget exhausted (at current burn rate)
+(slo:http_availability:error_budget_remaining / 100)
+*
+28
+/
+(1 - sli:http_availability:ratio) * (1 - 0.999)
 ```
 
 ## Multi-Window Burn Rate Alerts
 
 ```yaml
+# Combination of short and long windows reduces false positives
 rules:
   - alert: SLOBurnRateHigh
     expr: |
