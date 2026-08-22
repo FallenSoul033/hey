@@ -24,7 +24,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22.16.0'
-          cache: npm
 
       - name: Download exact Google Drive candidate and verify SHA-256
         shell: bash
