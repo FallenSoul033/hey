@@ -72,6 +72,15 @@ jobs:
           install_skill cro
           install_skill ab-testing
 
+          install_skill content-strategy
+          install_skill social
+          install_skill image
+          install_skill video
+          install_skill ads
+          install_skill ad-creative
+          install_skill co-marketing
+          install_skill referrals
+
           git push origin HEAD:main
 
       - name: Verify installed skills
@@ -95,7 +104,15 @@ jobs:
             ai-seo \
             analytics \
             cro \
-            ab-testing; do
+            ab-testing \
+            content-strategy \
+            social \
+            image \
+            video \
+            ads \
+            ad-creative \
+            co-marketing \
+            referrals; do
             test -f ".agents/skills/$skill/SKILL.md"
             echo "OK: $skill"
           done
