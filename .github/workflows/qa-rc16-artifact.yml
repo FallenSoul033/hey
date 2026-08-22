@@ -30,12 +30,16 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf qa-artifact candidate.zip
+          EXPECTED_SIZE='2166909'
           URL='https://drive.usercontent.google.com/download?id=1jIfRjBFsKAhLWyB5tG2cnSIihSXpRwlM&export=download&confirm=t'
-          if ! curl -fL --retry 3 --retry-delay 2 --connect-timeout 20 "$URL" -o candidate.zip; then
+          curl -fL --retry 3 --retry-delay 2 --connect-timeout 20 "$URL" -o candidate.zip || true
+          ACTUAL_SIZE="$(stat -c%s candidate.zip 2>/dev/null || echo 0)"
+          if [ "$ACTUAL_SIZE" != "$EXPECTED_SIZE" ]; then
+            rm -f candidate.zip
             python -m pip install --disable-pip-version-check -q gdown
             gdown 'https://drive.google.com/uc?id=1jIfRjBFsKAhLWyB5tG2cnSIihSXpRwlM' -O candidate.zip
           fi
-          test "$(stat -c%s candidate.zip)" = '2166909'
+          test "$(stat -c%s candidate.zip)" = "$EXPECTED_SIZE"
           ACTUAL="$(sha256sum candidate.zip | awk '{print $1}')"
           echo "artifact_sha256=$ACTUAL"
           test "$ACTUAL" = '169e8cdd0c5a7f42efac53e105e99255a2b23a8f0f4f57132dcb9fd1a1be2e55'
