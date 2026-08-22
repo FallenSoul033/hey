@@ -1,0 +1,172 @@
+name: QA RC1.6 Exact Artifact
+
+on:
+  push:
+    branches:
+      - qa/rc1.6-independent-verification
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-exact-artifact:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout QA harness only
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+          cache: npm
+
+      - name: Download exact Google Drive candidate and verify SHA-256
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf qa-artifact candidate.zip
+          URL='https://drive.usercontent.google.com/download?id=1jIfRjBFsKAhLWyB5tG2cnSIihSXpRwlM&export=download&confirm=t'
+          if ! curl -fL --retry 3 --retry-delay 2 --connect-timeout 20 "$URL" -o candidate.zip; then
+            python -m pip install --disable-pip-version-check -q gdown
+            gdown 'https://drive.google.com/uc?id=1jIfRjBFsKAhLWyB5tG2cnSIihSXpRwlM' -O candidate.zip
+          fi
+          test "$(stat -c%s candidate.zip)" = '2166909'
+          ACTUAL="$(sha256sum candidate.zip | awk '{print $1}')"
+          echo "artifact_sha256=$ACTUAL"
+          test "$ACTUAL" = '169e8cdd0c5a7f42efac53e105e99255a2b23a8f0f4f57132dcb9fd1a1be2e55'
+          unzip -tq candidate.zip
+          mkdir qa-artifact
+          unzip -q candidate.zip -d qa-artifact
+
+      - name: Dependency install
+        working-directory: qa-artifact
+        run: npm ci --no-audit --no-fund
+
+      - name: Lint
+        working-directory: qa-artifact
+        run: npm run lint
+
+      - name: JavaScript syntax checks
+        working-directory: qa-artifact
+        run: |
+          node --check public/app.js
+          node --check public/routes.js
+          node --check public/core.js
+          node --check public/sw.js
+
+      - name: TypeScript check
+        working-directory: qa-artifact
+        run: npx tsc --noEmit
+
+      - name: Full build
+        working-directory: qa-artifact
+        run: npm run build
+
+      - name: Full automated tests after build
+        working-directory: qa-artifact
+        run: node --test tests/*.test.mjs
+
+      - name: Install browser harness dependency
+        working-directory: qa-artifact
+        run: npm install --no-save --ignore-scripts puppeteer-core@24
+
+      - name: Start non-production built preview
+        working-directory: qa-artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          nohup npm run start -- --host 127.0.0.1 --port 4173 >/tmp/icefresh-preview.log 2>&1 &
+          echo $! >/tmp/icefresh-preview.pid
+          for i in $(seq 1 45); do
+            if curl -fsS http://127.0.0.1:4173/ >/tmp/icefresh-home.html; then
+              echo 'preview_ready=true'
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/icefresh-preview.log || true
+          exit 1
+
+      - name: Browser smoke, console, responsive and product-photo checks
+        working-directory: qa-artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          CHROME="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || command -v chromium-browser)"
+          test -n "$CHROME"
+          CHROME_BIN="$CHROME" node --input-type=module <<'NODE'
+          import puppeteer from 'puppeteer-core';
+          import assert from 'node:assert/strict';
+          const browser = await puppeteer.launch({
+            executablePath: process.env.CHROME_BIN,
+            headless: true,
+            args: ['--no-sandbox','--disable-dev-shm-usage']
+          });
+          const failures = [];
+          const warnings = [];
+          async function check(width, height) {
+            const page = await browser.newPage();
+            await page.setViewport({ width, height, deviceScaleFactor: 1 });
+            page.on('console', msg => {
+              if (msg.type() === 'error') failures.push(`console:${width}:${msg.text()}`);
+              if (msg.type() === 'warn' || msg.type() === 'warning') warnings.push(`console:${width}:${msg.text()}`);
+            });
+            page.on('pageerror', err => failures.push(`pageerror:${width}:${err.message}`));
+            await page.evaluateOnNewDocument(() => {
+              window.__qaCLS = 0;
+              new PerformanceObserver(list => {
+                for (const entry of list.getEntries()) {
+                  if (!entry.hadRecentInput) window.__qaCLS += entry.value;
+                }
+              }).observe({type:'layout-shift', buffered:true});
+            });
+            await page.goto('http://127.0.0.1:4173/', {waitUntil:'networkidle2', timeout:60000});
+            await new Promise(r => setTimeout(r, 1200));
+            const data = await page.evaluate(() => {
+              const root = document.documentElement;
+              const images = [...document.querySelectorAll('img')].map(img => ({
+                src: img.getAttribute('src') || '',
+                currentSrc: img.currentSrc || '',
+                naturalWidth: img.naturalWidth,
+                naturalHeight: img.naturalHeight,
+                fit: getComputedStyle(img).objectFit,
+              }));
+              return {
+                title: document.title,
+                horizontalOverflow: root.scrollWidth > root.clientWidth + 1,
+                cls: window.__qaCLS || 0,
+                images,
+              };
+            });
+            assert.match(data.title, /IceFresh/i);
+            assert.equal(data.horizontalOverflow, false, `horizontal overflow at ${width}`);
+            assert.ok(data.cls < 0.1, `CLS ${data.cls} at ${width}`);
+            const expected = [
+              ['cup-250-premium-1600.webp','contain'],
+              ['bag-1kg-premium-1600.webp','contain'],
+              ['bag-2kg-premium-1600.webp','contain'],
+              ['horeca-5kg-premium-1600.webp','cover'],
+            ];
+            for (const [file, fit] of expected) {
+              const img = data.images.find(x => x.src.includes(file) || x.currentSrc.includes(file));
+              assert.ok(img, `${file} not rendered at ${width}`);
+              assert.equal(img.naturalWidth, 1600, `${file} width at ${width}`);
+              assert.equal(img.naturalHeight, 1600, `${file} height at ${width}`);
+              assert.equal(img.fit, fit, `${file} object-fit at ${width}`);
+            }
+            console.log(JSON.stringify({width, ...data}, null, 2));
+            await page.close();
+          }
+          await check(390, 844);
+          await check(1440, 1000);
+          await browser.close();
+          if (warnings.length) throw new Error(`browser warnings: ${warnings.join(' | ')}`);
+          if (failures.length) throw new Error(failures.join(' | '));
+          NODE
+
+      - name: Print preview log
+        if: always()
+        run: cat /tmp/icefresh-preview.log || true
