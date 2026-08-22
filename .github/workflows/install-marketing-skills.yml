@@ -81,6 +81,15 @@ jobs:
           install_skill co-marketing
           install_skill referrals
 
+          install_skill programmatic-seo
+          install_skill free-tools
+          install_skill community-marketing
+          install_skill lead-magnets
+          install_skill public-relations
+          install_skill influencer-marketing
+          install_skill marketing-council
+          install_skill marketing-ideas
+
           git push origin HEAD:main
 
       - name: Verify installed skills
@@ -112,7 +121,15 @@ jobs:
             ads \
             ad-creative \
             co-marketing \
-            referrals; do
+            referrals \
+            programmatic-seo \
+            free-tools \
+            community-marketing \
+            lead-magnets \
+            public-relations \
+            influencer-marketing \
+            marketing-council \
+            marketing-ideas; do
             test -f ".agents/skills/$skill/SKILL.md"
             echo "OK: $skill"
           done
