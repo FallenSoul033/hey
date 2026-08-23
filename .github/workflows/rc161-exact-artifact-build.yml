@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - ci/rc161-exact-artifact-build-handoff
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -36,9 +39,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: transport-repo/canonical-sites/RC1.6.1/package-lock.json
-        continue-on-error: true
 
       - name: Fetch encrypted carrier
         shell: bash
