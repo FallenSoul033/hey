@@ -1,14 +1,15 @@
 ---
 name: icefresh-copy-paste-prompt-standard
 description: >
-  Project-wide prompt-writing standard for IceFresh.kz. Use whenever the Admin
-  agent prepares a prompt, handoff, task brief, retest request, release gate,
-  production instruction, or "what should I send/write" message for another
-  IceFresh agent/chat. Output one complete copy-paste-ready prompt in a single
-  code block with all known context, exact artifact identities, constraints,
-  ordered execution steps, stop conditions, acceptance criteria, rollback/safety
-  rules, and a strict final report/verdict format. Avoid fragmented follow-up
-  instructions that force the user to merge several messages manually.
+  Mandatory project-wide prompt standard for IceFresh.kz. Use whenever Admin
+  prepares a prompt, handoff, task brief, retest, release gate, production,
+  rollback, recovery, post-deploy or other instruction that the user will copy
+  into another IceFresh agent/chat/Work. Output one complete self-contained
+  copy-paste-ready prompt in one code block. Include all known exact IDs,
+  artifact identities, constraints, DO NOT rules, ordered steps, STOP conditions,
+  acceptance criteria, rollback/data restoration, end-to-end execution rules,
+  and a strict final report/verdict. The executor must not return early with
+  intermediate results when safe authorized work remains.
 risk: low
 source: "IceFresh.kz internal project standard"
 ---
@@ -19,341 +20,287 @@ source: "IceFresh.kz internal project standard"
 
 Главное правило:
 
-> Пользователь должен иметь возможность нажать Copy один раз, вставить весь текст в нужный чат/Work и сразу запустить работу без ручной сборки контекста из нескольких сообщений.
+> Пользователь должен нажать Copy один раз, вставить весь текст в нужный чат/Work и запустить задачу без ручной сборки контекста из нескольких сообщений.
 
 ## Когда навык обязателен
 
-Используй этот навык каждый раз, когда пользователь просит:
+Используй его для любого handoff между агентами IceFresh.kz, включая Development, QA, Security, UX/UI, CRM, Finance, Admin, production deploy, rollback, incident recovery, release gate и post-deploy acceptance.
 
-- «напиши промпт»;
-- «что написать агенту?»;
-- «скинь задачу для Development / QA / Security / UX/UI / CRM / Finance»;
-- «отправь следующий этап»;
-- «дай текст для Work»;
-- prompt для retest, hotfix, release gate, production deploy, rollback, post-deploy QA;
-- любой handoff между агентами IceFresh.kz.
+Применяй также автоматически, когда сам предлагаешь пользователю текст, который он должен переслать другому агенту.
 
-Применяй также автоматически, когда Admin сам предлагает текст, который пользователь должен переслать другому агенту.
+## Формат ответа
 
-## Формат ответа по умолчанию
-
-Сам промпт всегда отдавай как **один цельный fenced code block**:
+Сам рабочий prompt всегда отдавай одним цельным fenced code block:
 
 ```text
 ...весь промпт...
 ```
 
-Не разбивай один рабочий промпт на несколько code block'ов.
+Перед блоком допустима только короткая фраза вроде «Скопируй и отправь в Work:».
 
-Перед code block допустима максимум одна короткая фраза, например:
+После блока не добавляй обязательные инструкции, которые пользователю пришлось бы вручную дописывать. Если инструкция нужна исполнителю — она должна уже быть внутри единого блока.
 
-«Скопируй и отправь в Development:»
+## Самодостаточность
 
-После code block не добавляй новые обязательные инструкции, которые пользователь должен вручную дописывать в промпт. Если инструкция нужна исполнителю — она должна уже находиться внутри единого блока.
+Получающий агент не должен угадывать:
 
-## Принцип полноты
-
-Промпт должен быть самодостаточным. Получающий агент не должен угадывать:
-
-- что именно делать;
-- какой release/candidate проверять;
+- что делать;
+- какой release/candidate использовать;
 - где artifact;
-- какой hash считать правильным;
-- что уже проверено;
-- что нельзя менять;
-- какой target использовать;
-- что считается PASS;
-- когда нужно STOP;
-- какой отчёт вернуть Admin.
+- filename / Drive ID / byte size / SHA-256;
+- trace branch / commit / CI run, если применимо;
+- production project/domain/deployment IDs;
+- Supabase project ID, если применимо;
+- что уже PASS;
+- какой baseline нельзя потерять;
+- что разрешено и запрещено;
+- что считать PASS/FAIL;
+- когда STOP;
+- какой отчёт и verdict вернуть.
 
-Если факт уже известен из проекта и нужен для безопасного выполнения — включай его прямо в prompt.
+Все известные и нужные для безопасного выполнения факты включай прямо в prompt.
 
-## Обязательная структура сложного промпта
+## Обязательная структура сложного prompt
 
-Для release/development/QA/security/deployment задач используй этот порядок, если раздел применим:
+Если раздел применим, используй такой порядок:
 
-1. **Заголовок задачи**
-   - номер задачи;
-   - release/version;
-   - краткая цель.
-
-2. **Роль исполнителя**
-   - кто он в рамках задачи;
-   - независимая ли это проверка;
-   - от чего нельзя слепо наследовать verdict.
-
-3. **Цель / ожидаемый результат**
-   - одна ясная формулировка конечного состояния.
-
-4. **Exact target / artifact identity**
-   При наличии указывай буквально:
-   - filename;
-   - Drive ID;
-   - byte size;
-   - SHA-256;
-   - trace branch;
-   - trace commit;
-   - GitHub Actions run/job;
-   - Vercel project/deployment ID;
-   - Supabase project ID;
-   - production domains.
-
-5. **Текущее подтверждённое состояние**
-   - какие gates уже PASS;
-   - какие дефекты уже исправлены;
-   - какой baseline нельзя потерять;
-   - какой rollback point существует.
-
-6. **Scope**
-   - что именно разрешено менять/проверять;
-   - что вне scope.
-
-7. **Жёсткие запреты / DO NOT**
-   Явно перечисляй вещи, которые опасно сделать по ошибке, например:
-   - не использовать GitHub main вместо canonical artifact;
-   - не менять backend;
-   - не менять Supabase;
-   - не перезаписывать immutable ZIP;
-   - не делать production deploy;
-   - не ослаблять auth/RLS;
-   - не менять source ради прохождения gate.
-
-8. **Пошаговый execution plan**
-   Для операционных задач используй нумерованные шаги:
-   - Step 1 — identity gate;
-   - Step 2 — clean extraction;
-   - Step 3 — build/test;
-   - Step 4 — runtime/browser verification;
-   - Step 5 — deployment/alias switch;
-   - Step 6 — data readback;
-   - Step 7 — rollback safety;
-   и т.д.
-
-9. **STOP conditions**
-   Отдельно укажи, когда исполнитель обязан остановиться, а не «починить по пути».
-
-   Примеры:
-   - hash не совпал;
-   - source изменился вне разрешённого scope;
-   - security-sensitive file затронут;
-   - production target не совпадает;
-   - deployment требует изменение immutable candidate;
-   - данные baseline не восстановились.
-
-10. **Acceptance criteria**
-    Делай проверяемыми: PASS/FAIL, конкретные размеры, значения, количества тестов, DOM metrics, HTTP/runtime признаки, business totals.
-
-11. **Rollback / data restoration**
-    Для production или mutation-задач всегда указывай:
-    - rollback deployment / backup;
-    - baseline данных;
-    - обязательный readback после rollback/restore.
-
-12. **Final report template**
-    В конце prompt всегда дай точные поля, которые исполнитель должен заполнить.
-
-13. **Allowed final verdicts**
-    Используй ограниченный набор точных строк, например:
-    - `PASS TO QA RETEST`
-    - `PASS TO ADMIN RELEASE GATE`
-    - `READY FOR POST-DEPLOY QA`
-    - `RETURN TO DEVELOPMENT`
-    - `BLOCKED — <точная причина>`
-    - `ROLLBACK REQUIRED — <точная причина>`
-
-## Стиль
-
-Пиши по-русски, простым операционным языком.
-
-Предпочитай:
-
-- короткие императивные предложения;
-- точные IDs и значения;
-- понятные заголовки;
-- PASS/FAIL форматы;
-- явные запреты;
-- один источник истины;
-- минимальную двусмысленность.
-
-Не делай prompt «красивым эссе». Он должен быть рабочей инструкцией.
-
-## Один prompt = один пакет действий
-
-Если пользователь просит исполнителя:
-
-- сделать deploy;
-- сразу вывести на live domain;
-- потом выполнить smoke;
-
-и все эти действия относятся к одной безопасной операционной цепочке — включи их **сразу в один prompt**.
-
-Не отвечай сначала «сделай deployment», а потом отдельным сообщением «и ещё переключи alias», если это можно было предусмотреть заранее.
-
-Исключение: не объединяй действия, если между ними обязан стоять независимый gate или новое пользовательское разрешение.
-
-Пример:
-
-- Development исправил код → STOP → независимый QA.
-- QA PASS → Admin решает production GO/NO-GO.
-
-В таком случае нельзя давать Development указание самостоятельно считать свой QA достаточным.
+1. TASK TITLE / номер / release / цель.
+2. Role — роль исполнителя и независимость проверки.
+3. Goal — конечное состояние, а не только первый шаг.
+4. Exact target / artifact identity.
+5. Known good state / уже пройденные gates / baseline / rollback point.
+6. Scope.
+7. DO NOT — явные запреты.
+8. Ordered execution plan.
+9. CRITICAL EXECUTION RULE — DO NOT RETURN EARLY.
+10. STOP CONDITIONS.
+11. ACCEPTANCE CRITERIA.
+12. ROLLBACK / DATA RESTORATION.
+13. FINAL REPORT.
+14. ALLOWED FINAL VERDICTS.
 
 ## Exact artifact discipline
 
-Для immutable release candidate:
+Для immutable candidate:
 
-1. Всегда указывай identity до extraction.
-2. Требуй verification filename + byte size + SHA-256.
-3. Не разрешай заменять ZIP веткой GitHub или локальной рабочей копией.
-4. Если bytes изменились — это новый candidate, новый SHA и соответствующие gates.
-5. Trace commit не считается artifact, если он только evidence/manifest.
+1. Identity gate всегда до extraction.
+2. Проверять filename + byte size + SHA-256.
+3. Не заменять ZIP GitHub branch, main или локальной рабочей копией.
+4. Если bytes изменились — это новый candidate, новый SHA и новые обязательные gates.
+5. Trace commit — evidence, а не замена artifact, если release определён ZIP-файлом.
+
+## DO NOT rules
+
+В зависимости от задачи явно запрещай опасные действия, например:
+
+- не использовать GitHub main вместо canonical artifact;
+- не менять backend/Supabase/migrations вне scope;
+- не ослаблять Auth/RLS/permissions;
+- не менять immutable candidate ради прохождения gate;
+- не делать unrelated refactor;
+- не удалять rollback deployment;
+- не менять DNS без прямого разрешения;
+- не выполнять production mutation без recovery/readback плана;
+- не считать Development self-check независимым QA.
+
+## Один prompt = одна разрешённая end-to-end цепочка
+
+Если действия логически относятся к одной безопасной цепочке и между ними не требуется независимый gate или новое пользовательское разрешение, включай их сразу в один prompt.
+
+Пример production:
+
+deploy → wait READY → switch live aliases → verify live domain → smoke → data readback → collect evidence → final report.
+
+Пример incident recovery:
+
+verify rollback target → rollback/promote → verify aliases → live recovery smoke → read-only root-cause investigation → recommendation → final report.
+
+Не выдавай сначала «сделай deploy», потом отдельным сообщением «и ещё переключи alias», если это можно было предусмотреть заранее.
+
+## CRITICAL EXECUTION RULE — DO NOT RETURN EARLY
+
+Для операционных задач, Work/Codex, deployment, recovery, QA automation и других длинных цепочек prompt обязан содержать правило:
+
+> Не возвращайся к Admin с промежуточным результатом, частичным отчётом или сообщением «следующий шаг нужно сделать отдельно», пока остаются безопасные действия, уже разрешённые этим заданием.
+
+Исполнитель должен самостоятельно пройти всю разрешённую цепочку end-to-end.
+
+Если один официальный/безопасный способ не сработал, но существует другой безопасный способ в рамках уже выданного разрешения — проверить/использовать его и продолжить, не возвращаясь после первой неудачной команды.
+
+Не запрашивать новое подтверждение для шагов, которые уже прямо разрешены prompt.
+
+Возвращаться только когда:
+
+### A. Получен конечный результат
+
+Выполнены все применимые шаги, проверки, readback, smoke, investigation и собран полный FINAL REPORT.
+
+### B. Достигнут настоящий HARD STOP
+
+Продолжение невозможно безопасно без хотя бы одного из следующего:
+
+- нового разрешения Admin/пользователя;
+- изменения immutable candidate;
+- создания нового release candidate;
+- изменения production данных без уже выданного разрешения;
+- изменения DNS/секретов/permissions вне scope;
+- необратимого действия;
+- отсутствующих credentials/access;
+- независимого gate, который по архитектуре обязан выполняться другим агентом.
+
+При HARD STOP executor обязан вернуть:
+
+- точную причину blocker;
+- какие безопасные варианты уже самостоятельно проверены;
+- почему дальнейшее действие требует Admin/другого gate;
+- одно конкретное следующее действие для продолжения.
+
+Промежуточный статус сам по себе не является FINAL REPORT.
+
+## Независимые gates не объединять
+
+Правило end-to-end не отменяет separation of duties.
+
+Примеры:
+
+- Development исправил код → STOP → независимый QA.
+- Security Gate выполняется независимо, если затронут security-sensitive scope.
+- QA PASS → Admin production GO/NO-GO.
+- Production deploy → отдельный post-deploy acceptance, если он принят процессом.
+
+Исполнитель не имеет права self-approve независимый gate только ради «не возвращаться рано».
 
 ## Production prompts
 
-Production prompt должен явно содержать:
+Production prompt должен включать:
 
-- точный approved candidate;
-- production target IDs;
-- текущий rollback deployment;
-- запрет неканонических source;
-- шаг переключения live alias/domain, если релиз должен стать публичным;
+- exact approved candidate;
+- exact target project/team IDs;
+- production domains;
+- rollback deployment;
+- canonical deployment mechanism;
+- запрет неканонического source;
+- wait until READY;
+- live alias/domain switch, если это часть разрешения;
 - immediate live smoke;
-- baseline data readback;
+- backend/data baseline readback при необходимости;
 - rollback trigger;
-- требование не считать release закрытым до независимого post-deploy acceptance.
+- правило DO NOT RETURN EARLY;
+- строгий FINAL REPORT.
 
-Если known tool/CLI может создавать служебные файлы, заранее опиши безопасный способ target selection, чтобы не заставлять исполнителя импровизировать и менять candidate.
+Если deployment tooling создаёт служебные файлы, заранее укажи безопасный targeting method, чтобы executor не импровизировал с immutable candidate.
 
 ## QA prompts
 
-QA prompt должен подчёркивать независимость:
+QA prompt должен:
 
-- не засчитывать Development verdict как QA PASS;
-- проверить exact artifact identity самостоятельно;
+- быть независимым от Development verdict;
+- самостоятельно проверить exact artifact identity;
 - воспроизвести ключевой пользовательский сценарий;
 - различать application defect и QA infrastructure defect;
-- сохранять/восстанавливать production baseline;
-- вернуть только один официальный verdict.
+- восстанавливать baseline после mutation;
+- не возвращаться после первой проверки, если весь test matrix уже разрешён;
+- вернуть один официальный verdict.
 
 ## Security prompts
 
 Security prompt должен:
 
 - указывать exact changed scope;
-- проверять реальные trust boundaries;
-- запрещать считать passing tests доказательством безопасности;
-- отделять INFO от blocking finding;
-- требовать финальный verdict, который однозначно маршрутизирует release дальше.
+- проверять trust boundaries;
+- не считать passing tests доказательством безопасности;
+- отделять INFO от blocker;
+- выполнять весь разрешённый security checklist до final verdict;
+- возвращать однозначный маршрут release дальше.
 
 ## Development prompts
 
 Development prompt должен:
 
-- содержать root cause или evidence текущего defect;
+- содержать evidence/root cause текущего defect;
 - ограничивать diff;
 - запрещать unrelated refactor;
-- определять test/build evidence;
-- описывать candidate handling;
-- указывать, нужен ли новый Security Gate при изменении security-sensitive файлов.
+- определять build/test evidence;
+- определять candidate handling;
+- указывать, нужен ли новый Security Gate;
+- выполнять все разрешённые self-checks до handoff, а не возвращаться после первого исправленного файла.
 
 ## UX/UI prompts
 
-UX/UI prompt должен давать:
+UX/UI prompt должен содержать:
 
 - конкретные viewport'ы;
 - экран/элемент;
-- что уже технически PASS;
-- что оценивается визуально;
-- blocker vs non-blocking improvements;
-- запрет молча менять код во время независимой acceptance, если задача только на проверку.
+- технический baseline;
+- визуальные acceptance criteria;
+- blocker vs non-blocking distinction;
+- запрет молча менять код во время независимой acceptance;
+- полный viewport matrix до final verdict.
 
 ## CRM / Finance prompts
 
-CRM/Finance prompt должен содержать контрольные business values и источник истины.
+Всегда включай контрольные business values, source of truth, duplicate/revenue/status rules и обязательный restore/readback для mutation tests.
 
-Например для order QA:
+## STOP CONDITIONS
 
-- строки товаров;
-- total;
-- paid;
-- debt;
-- status;
-- duplicate expectations;
-- revenue recognition rules;
-- rollback/readback при mutation test.
+STOP conditions должны быть конкретными. Примеры:
 
-## Не повторять ошибку «добавь ещё одну строку»
+- hash mismatch;
+- target/project mismatch;
+- unexpected source mutation;
+- security-sensitive scope расширился;
+- rollback target не работает;
+- baseline не восстановился;
+- operation требует новое пользовательское разрешение;
+- следующий шаг обязан выполнять независимый verifier.
 
-Если после отправленного prompt пользователь уточняет логичное действие, которое очевидно должно было входить в исходную цепочку, при следующей подобной задаче включай его сразу.
+Не путай обычную ошибку одной команды с HARD STOP, если есть другой безопасный официальный путь внутри scope.
 
-Пример:
+## Acceptance criteria
 
-Плохо:
-1. «Сделай production deploy».
-2. После уточнения пользователя: «И ещё сразу загрузи на сайт».
+Делай критерии измеримыми: PASS/FAIL, конкретные totals, viewports, HTTP status, DOM metrics, exact test count, console/runtime errors, aliases, baseline readback.
 
-Правильно:
+## FINAL REPORT
 
-Один prompt сразу содержит:
-- deploy production;
-- wait READY;
-- switch live aliases;
-- verify live domain;
-- smoke;
-- return deployment evidence.
+В конце prompt дай точные поля для заполнения.
 
-## Минимальный шаблон
+Финальный отчёт должен позволять Admin сразу понять:
 
-```text
-TASK TITLE
+- что реально выполнено;
+- какой exact target/artifact использован;
+- что изменилось;
+- что проверено;
+- baseline/rollback сохранён ли;
+- есть ли blocker;
+- какой официальный verdict.
 
-Role:
-...
+Допустимые verdicts задавай заранее, например:
 
-Goal:
-...
-
-Exact target:
-...
-
-Known good state:
-...
-
-DO NOT:
-...
-
-STEP 1 — ...
-...
-
-STEP 2 — ...
-...
-
-STOP CONDITIONS:
-...
-
-ACCEPTANCE:
-...
-
-FINAL REPORT:
-Field A: PASS/FAIL
-Field B: ...
-
-FINAL VERDICT:
-`...` / `...`
-```
+- `PASS TO QA RETEST`
+- `PASS TO ADMIN RELEASE GATE`
+- `READY FOR POST-DEPLOY QA`
+- `PRODUCTION RESTORED — READY FOR ADMIN REVIEW`
+- `RETURN TO DEVELOPMENT`
+- `BLOCKED — <точная причина>`
+- `ROLLBACK REQUIRED — <точная причина>`
+- `HARD STOP — <точная причина>`
 
 ## Проверка перед отправкой prompt пользователю
 
-Перед финальным ответом мысленно проверь:
+Перед ответом проверь:
 
-- Можно ли скопировать только один блок и выполнить задачу?
-- Все ли известные exact IDs уже внутри блока?
-- Нет ли обязательной инструкции после блока?
-- Указаны ли DO NOT?
-- Указаны ли STOP conditions?
-- Понятно ли, что считать PASS?
-- Понятно ли, что вернуть?
-- Понятно ли, кто следующий gate?
-- Не смешал ли prompt independent verification с self-approval?
+- Пользователь может скопировать один блок и выполнить всю задачу?
+- Все exact IDs/values внутри?
+- Все логичные действия одной цепочки уже внутри?
+- Нет ли обязательной инструкции после code block?
+- Есть ли DO NOT?
+- Есть ли DO NOT RETURN EARLY?
+- Ясно ли, что является HARD STOP?
+- Есть ли STOP conditions?
+- Есть ли acceptance criteria?
+- Есть ли rollback/data restoration?
+- Есть ли строгий FINAL REPORT?
+- Ясно ли, кто следующий независимый gate?
+- Не смешан ли self-check с independent approval?
 
-Если любой ответ «нет» — дополни единый prompt до отправки.
+Если хотя бы один ответ «нет» — дополни единый prompt до отправки.
