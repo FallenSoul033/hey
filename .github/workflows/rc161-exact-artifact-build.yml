@@ -1,0 +1,191 @@
+name: RC1.6.1 Exact Artifact Build Gate
+
+on:
+  push:
+    branches:
+      - ci/rc161-exact-artifact-build-handoff
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  exact-artifact-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      EXPECTED_FILENAME: IceFresh_RC1_6_1_Canonical_QA.zip
+      EXPECTED_SIZE: "2176857"
+      EXPECTED_SHA256: 9cfec531d6b5a61fa677921d7078454a96af95320ccf9b2202095df9d177656e
+      CARRIER_FILE_ID: 1MQRYuRRFie1Cb1pLtJW4lS4jdHcQSxfe
+      CARRIER_SHA256: 83a4372a846b1442dcec8e66bf9da67976bee2de9eab30a35d6d62b5c8914801
+      CIPHER_NONCE_B64: hcQAhG1xl/04W2J2
+      CIPHER_TAG_B64: 0nDBiusz+HADfgKyXdCe+Q==
+      CIPHER_AAD: IceFresh_RC1_6_1_Canonical_QA.zip|9cfec531d6b5a61fa677921d7078454a96af95320ccf9b2202095df9d177656e
+      KEY_ENDPOINT: https://mzxhrbwwfnvpejnbhrfx.supabase.co/functions/v1/rc161-artifact-key
+      VITE_SUPABASE_URL: https://example.supabase.co
+      VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
+
+    steps:
+      - name: Checkout transport workflow only (not candidate source)
+        uses: actions/checkout@v4
+        with:
+          ref: ci/rc161-exact-artifact-build-handoff
+          path: transport-repo
+          fetch-depth: 1
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Fetch encrypted carrier
+        shell: bash
+        run: |
+          set -euo pipefail
+          carrier="$RUNNER_TEMP/rc161.aes256gcm"
+          url="https://drive.usercontent.google.com/download?id=${CARRIER_FILE_ID}&export=download&confirm=t"
+          curl --fail --location --silent --show-error \
+            --retry 2 --retry-delay 2 \
+            -H 'User-Agent: Mozilla/5.0' \
+            "$url" -o "$carrier"
+          actual_carrier_sha="$(sha256sum "$carrier" | awk '{print $1}')"
+          actual_carrier_size="$(stat -c '%s' "$carrier")"
+          echo "encrypted carrier size=${actual_carrier_size}"
+          echo "encrypted carrier sha256=${actual_carrier_sha}"
+          if [[ "$actual_carrier_sha" != "$CARRIER_SHA256" ]]; then
+            echo 'STOP: encrypted carrier mismatch/interstitial; exact candidate was not obtained.' >&2
+            exit 20
+          fi
+
+      - name: Obtain transport key via GitHub Actions OIDC
+        id: transport_key
+        shell: bash
+        run: |
+          set -euo pipefail
+          oidc_json="$(curl --fail --silent --show-error \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=icefresh-rc161-qa")"
+          oidc_token="$(printf '%s' "$oidc_json" | jq -r '.value')"
+          key_json="$(curl --fail --silent --show-error \
+            -H "Authorization: Bearer ${oidc_token}" \
+            "$KEY_ENDPOINT")"
+          key_b64="$(printf '%s' "$key_json" | jq -r '.key_b64')"
+          meta_name="$(printf '%s' "$key_json" | jq -r '.filename')"
+          meta_size="$(printf '%s' "$key_json" | jq -r '.byte_size')"
+          meta_sha="$(printf '%s' "$key_json" | jq -r '.sha256')"
+          if [[ -z "$key_b64" || "$key_b64" == null ]]; then
+            echo 'STOP: OIDC transport key was not issued.' >&2
+            exit 21
+          fi
+          if [[ "$meta_name" != "$EXPECTED_FILENAME" || "$meta_size" != "$EXPECTED_SIZE" || "$meta_sha" != "$EXPECTED_SHA256" ]]; then
+            echo 'STOP: OIDC transport metadata mismatch.' >&2
+            exit 22
+          fi
+          echo "::add-mask::$key_b64"
+          echo "key_b64=$key_b64" >> "$GITHUB_OUTPUT"
+
+      - name: Decrypt exact candidate bytes
+        shell: bash
+        env:
+          KEY_B64: ${{ steps.transport_key.outputs.key_b64 }}
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+          const crypto = require('node:crypto');
+          const path = require('node:path');
+          const input = path.join(process.env.RUNNER_TEMP, 'rc161.aes256gcm');
+          const output = path.join(process.env.RUNNER_TEMP, process.env.EXPECTED_FILENAME);
+          const key = Buffer.from(process.env.KEY_B64, 'base64');
+          const iv = Buffer.from(process.env.CIPHER_NONCE_B64, 'base64');
+          const tag = Buffer.from(process.env.CIPHER_TAG_B64, 'base64');
+          const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+          decipher.setAAD(Buffer.from(process.env.CIPHER_AAD, 'utf8'));
+          decipher.setAuthTag(tag);
+          const plaintext = Buffer.concat([
+            decipher.update(fs.readFileSync(input)),
+            decipher.final(),
+          ]);
+          fs.writeFileSync(output, plaintext, { mode: 0o600 });
+          NODE
+
+      - name: Exact ZIP identity gate (must precede unzip/tests)
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifact="$RUNNER_TEMP/$EXPECTED_FILENAME"
+          actual_size="$(stat -c '%s' "$artifact")"
+          actual_sha="$(sha256sum "$artifact" | awk '{print $1}')"
+          echo "filename=$EXPECTED_FILENAME"
+          echo "byte size=$actual_size"
+          echo "SHA-256=$actual_sha"
+          if [[ "$actual_size" != "$EXPECTED_SIZE" ]]; then
+            echo "STOP: byte-size mismatch; expected $EXPECTED_SIZE." >&2
+            exit 30
+          fi
+          if [[ "$actual_sha" != "$EXPECTED_SHA256" ]]; then
+            echo "STOP: SHA-256 mismatch; expected $EXPECTED_SHA256." >&2
+            exit 31
+          fi
+          echo 'EXACT ARTIFACT IDENTITY: PASS'
+
+      - name: Extract exact ZIP after identity PASS
+        shell: bash
+        run: |
+          set -euo pipefail
+          candidate="$RUNNER_TEMP/exact-candidate"
+          rm -rf "$candidate"
+          mkdir -p "$candidate"
+          unzip -q "$RUNNER_TEMP/$EXPECTED_FILENAME" -d "$candidate"
+          test -f "$candidate/package.json"
+          test -f "$candidate/package-lock.json"
+
+      - name: npm ci
+        working-directory: ${{ runner.temp }}/exact-candidate
+        run: npm ci --no-audit --no-fund
+
+      - name: Lint exact candidate
+        working-directory: ${{ runner.temp }}/exact-candidate
+        run: npm run lint
+
+      - name: Full TypeScript typecheck exact candidate
+        working-directory: ${{ runner.temp }}/exact-candidate
+        run: npx --no-install tsc --noEmit
+
+      - name: Build exact candidate
+        working-directory: ${{ runner.temp }}/exact-candidate
+        run: npm run build
+
+      - name: Run all exact-candidate tests including build-dependent tests
+        working-directory: ${{ runner.temp }}/exact-candidate
+        run: node --test tests/*.test.mjs
+
+      - name: Built-preview smoke
+        working-directory: ${{ runner.temp }}/exact-candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/rc161-built-preview.log"
+          npm run start >"$log" 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 30); do
+            if ! kill -0 "$pid" 2>/dev/null; then
+              cat "$log" >&2
+              echo 'Built preview exited before becoming reachable.' >&2
+              exit 40
+            fi
+            for port in 3000 4173 5173 8787; do
+              if curl --fail --silent --show-error "http://127.0.0.1:${port}/" -o "$RUNNER_TEMP/rc161-smoke.html" 2>/dev/null; then
+                bytes="$(stat -c '%s' "$RUNNER_TEMP/rc161-smoke.html")"
+                echo "built-preview smoke reachable on port ${port}; response bytes=${bytes}"
+                test "$bytes" -gt 0
+                exit 0
+              fi
+            done
+            sleep 1
+          done
+          cat "$log" >&2
+          echo 'Built preview did not become reachable on expected local ports.' >&2
+          exit 41
