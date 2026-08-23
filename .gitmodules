@@ -1,0 +1,4 @@
+[submodule ".codex/vendor/ponytail"]
+	path = .codex/vendor/ponytail
+	url = https://github.com/DietrichGebert/ponytail.git
+	branch = main
