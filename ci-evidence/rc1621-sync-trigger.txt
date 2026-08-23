@@ -1,0 +1,1 @@
+Trigger pull_request_target:synchronize for exact RC1.6.2.1 artifact gate. No application/source change.
