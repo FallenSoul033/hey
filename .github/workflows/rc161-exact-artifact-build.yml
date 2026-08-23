@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - ci/rc161-exact-artifact-build-handoff
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -12,22 +13,19 @@ permissions:
 jobs:
   exact-artifact-build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       EXPECTED_FILENAME: IceFresh_RC1_6_1_Canonical_QA.zip
       EXPECTED_SIZE: "2176857"
       EXPECTED_SHA256: 9cfec531d6b5a61fa677921d7078454a96af95320ccf9b2202095df9d177656e
-      CARRIER_FILE_ID: 1MQRYuRRFie1Cb1pLtJW4lS4jdHcQSxfe
-      CARRIER_SHA256: 83a4372a846b1442dcec8e66bf9da67976bee2de9eab30a35d6d62b5c8914801
-      CIPHER_NONCE_B64: hcQAhG1xl/04W2J2
-      CIPHER_TAG_B64: 0nDBiusz+HADfgKyXdCe+Q==
-      CIPHER_AAD: IceFresh_RC1_6_1_Canonical_QA.zip|9cfec531d6b5a61fa677921d7078454a96af95320ccf9b2202095df9d177656e
+      CARRIER_FILE_ID: 1jOChx4EPa4B3z4jtupljcKU8AWdNtF7T
+      CARRIER_SHA256: 6ea00ab94d5e430671669e4396c447784f0e75c0870bee7ba814b84899b24939
       KEY_ENDPOINT: https://mzxhrbwwfnvpejnbhrfx.supabase.co/functions/v1/rc161-artifact-key
       VITE_SUPABASE_URL: https://example.supabase.co
       VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
 
     steps:
-      - name: Checkout transport workflow only (not candidate source)
+      - name: Checkout transport workflow only
         uses: actions/checkout@v4
         with:
           ref: ci/rc161-exact-artifact-build-handoff
@@ -38,15 +36,18 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: transport-repo/canonical-sites/RC1.6.1/package-lock.json
+        continue-on-error: true
 
       - name: Fetch encrypted carrier
         shell: bash
         run: |
           set -euo pipefail
-          carrier="$RUNNER_TEMP/rc161.aes256gcm"
+          carrier="$RUNNER_TEMP/rc161.enc"
           url="https://drive.usercontent.google.com/download?id=${CARRIER_FILE_ID}&export=download&confirm=t"
           curl --fail --location --silent --show-error \
-            --retry 2 --retry-delay 2 \
+            --retry 3 --retry-delay 2 \
             -H 'User-Agent: Mozilla/5.0' \
             "$url" -o "$carrier"
           actual_carrier_sha="$(sha256sum "$carrier" | awk '{print $1}')"
@@ -54,27 +55,28 @@ jobs:
           echo "encrypted carrier size=${actual_carrier_size}"
           echo "encrypted carrier sha256=${actual_carrier_sha}"
           if [[ "$actual_carrier_sha" != "$CARRIER_SHA256" ]]; then
-            echo 'STOP: encrypted carrier mismatch/interstitial; exact candidate was not obtained.' >&2
+            echo 'STOP: encrypted carrier mismatch/interstitial.' >&2
             exit 20
           fi
 
-      - name: Obtain transport key via GitHub Actions OIDC
+      - name: Obtain decryption key via GitHub Actions OIDC
         id: transport_key
         shell: bash
         run: |
           set -euo pipefail
           oidc_json="$(curl --fail --silent --show-error \
             -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
-            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=icefresh-rc161-qa")"
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=icefresh-rc161-build")"
           oidc_token="$(printf '%s' "$oidc_json" | jq -r '.value')"
           key_json="$(curl --fail --silent --show-error \
+            -X POST \
             -H "Authorization: Bearer ${oidc_token}" \
             "$KEY_ENDPOINT")"
-          key_b64="$(printf '%s' "$key_json" | jq -r '.key_b64')"
-          meta_name="$(printf '%s' "$key_json" | jq -r '.filename')"
-          meta_size="$(printf '%s' "$key_json" | jq -r '.byte_size')"
-          meta_sha="$(printf '%s' "$key_json" | jq -r '.sha256')"
-          if [[ -z "$key_b64" || "$key_b64" == null ]]; then
+          transport_key="$(printf '%s' "$key_json" | jq -r '.key')"
+          meta_name="$(printf '%s' "$key_json" | jq -r '.expected_filename')"
+          meta_size="$(printf '%s' "$key_json" | jq -r '.expected_size')"
+          meta_sha="$(printf '%s' "$key_json" | jq -r '.expected_sha256')"
+          if [[ -z "$transport_key" || "$transport_key" == null ]]; then
             echo 'STOP: OIDC transport key was not issued.' >&2
             exit 21
           fi
@@ -82,35 +84,23 @@ jobs:
             echo 'STOP: OIDC transport metadata mismatch.' >&2
             exit 22
           fi
-          echo "::add-mask::$key_b64"
-          echo "key_b64=$key_b64" >> "$GITHUB_OUTPUT"
+          echo "::add-mask::$transport_key"
+          echo "key=$transport_key" >> "$GITHUB_OUTPUT"
 
       - name: Decrypt exact candidate bytes
         shell: bash
         env:
-          KEY_B64: ${{ steps.transport_key.outputs.key_b64 }}
+          RC161_TRANSPORT_KEY: ${{ steps.transport_key.outputs.key }}
         run: |
           set -euo pipefail
-          node <<'NODE'
-          const fs = require('node:fs');
-          const crypto = require('node:crypto');
-          const path = require('node:path');
-          const input = path.join(process.env.RUNNER_TEMP, 'rc161.aes256gcm');
-          const output = path.join(process.env.RUNNER_TEMP, process.env.EXPECTED_FILENAME);
-          const key = Buffer.from(process.env.KEY_B64, 'base64');
-          const iv = Buffer.from(process.env.CIPHER_NONCE_B64, 'base64');
-          const tag = Buffer.from(process.env.CIPHER_TAG_B64, 'base64');
-          const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
-          decipher.setAAD(Buffer.from(process.env.CIPHER_AAD, 'utf8'));
-          decipher.setAuthTag(tag);
-          const plaintext = Buffer.concat([
-            decipher.update(fs.readFileSync(input)),
-            decipher.final(),
-          ]);
-          fs.writeFileSync(output, plaintext, { mode: 0o600 });
-          NODE
+          openssl enc -d -aes-256-cbc \
+            -pbkdf2 -iter 200000 -md sha256 \
+            -in "$RUNNER_TEMP/rc161.enc" \
+            -out "$RUNNER_TEMP/$EXPECTED_FILENAME" \
+            -pass env:RC161_TRANSPORT_KEY
+          chmod 600 "$RUNNER_TEMP/$EXPECTED_FILENAME"
 
-      - name: Exact ZIP identity gate (must precede unzip/tests)
+      - name: Exact ZIP identity gate
         shell: bash
         run: |
           set -euo pipefail
@@ -130,7 +120,7 @@ jobs:
           fi
           echo 'EXACT ARTIFACT IDENTITY: PASS'
 
-      - name: Extract exact ZIP after identity PASS
+      - name: Extract exact ZIP only after identity PASS
         shell: bash
         run: |
           set -euo pipefail
@@ -149,15 +139,18 @@ jobs:
         working-directory: ${{ runner.temp }}/exact-candidate
         run: npm run lint
 
-      - name: Full TypeScript typecheck exact candidate
+      - name: Full project typecheck
         working-directory: ${{ runner.temp }}/exact-candidate
         run: npx --no-install tsc --noEmit
 
       - name: Build exact candidate
         working-directory: ${{ runner.temp }}/exact-candidate
         run: npm run build
+        env:
+          VITE_SUPABASE_URL: ${{ env.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ env.VITE_SUPABASE_PUBLISHABLE_KEY }}
 
-      - name: Run all exact-candidate tests including build-dependent tests
+      - name: Run every test file including build-dependent tests
         working-directory: ${{ runner.temp }}/exact-candidate
         run: node --test tests/*.test.mjs
 
