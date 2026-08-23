@@ -108,6 +108,8 @@ jobs:
             sleep 1
           done
           test "${ready}" = '1'
-          curl --fail --silent --show-error http://127.0.0.1:8787/public-site.css | grep -q 'container-name:product-catalog'
-          curl --fail --silent --show-error http://127.0.0.1:8787/sw.js | grep -q 'icefresh-public-v4'
+          curl --fail --silent --show-error http://127.0.0.1:8787/public-site.css --output "${RUNNER_TEMP}/public-site.css"
+          curl --fail --silent --show-error http://127.0.0.1:8787/sw.js --output "${RUNNER_TEMP}/sw.js"
+          grep -q 'container-name:product-catalog' "${RUNNER_TEMP}/public-site.css"
+          grep -q 'icefresh-public-v4' "${RUNNER_TEMP}/sw.js"
           echo 'BUILT PREVIEW SMOKE: PASS'
