@@ -18,11 +18,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
-      EXPECTED_FILENAME: IceFresh_RC1_6_2_DEV_BUILD_GATE_v4.zip
-      EXPECTED_SIZE: "2184315"
-      EXPECTED_SHA256: 5c86723fc2cdc5a7d7b469ffbc73ae719df18045669110b22c7d352a3afd07f3
-      CARRIER_FILE_ID: 1lql0DFnLYpcUQFZYtvcuncCwPMGlRnll
-      CARRIER_SHA256: 4420031fcfdbd703ecf16a9ac2f95f58e89f241c76d2335a010577702e023d2d
+      EXPECTED_FILENAME: IceFresh_RC1_6_2_DEV_BUILD_GATE_v5.zip
+      EXPECTED_SIZE: "2184536"
+      EXPECTED_SHA256: 95ee0240991070260ab7a50d3c32a4d129e79d00a7f7d7334e87b90c53acc3b0
+      CARRIER_FILE_ID: 15cc-YZnYgFYXCpUWkrjzpUPwADyGAY09
+      CARRIER_SHA256: 1c10ed8a47410f1897fa98bde627be58c38135bfd61a265b374f6d9e9b4c9a8d
       KEY_ENDPOINT: https://mzxhrbwwfnvpejnbhrfx.supabase.co/functions/v1/rc162-artifact-key
       VITE_SUPABASE_URL: https://example.supabase.co
       VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
