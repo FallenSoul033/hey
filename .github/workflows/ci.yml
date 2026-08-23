@@ -7,6 +7,8 @@ on:
 permissions:
   contents: read
   id-token: write
+  pull-requests: write
+  issues: write
 
 jobs:
   exact-artifact-build:
@@ -105,5 +107,11 @@ jobs:
           done
           cat "$RUNNER_TEMP/preview.log"
           exit 1
+      - name: Publish exact gate PASS evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh pr comment 8 --repo FallenSoul033/hey --body "RC1.6.2.1 exact-artifact gate PASS\n\n- run_id: $GITHUB_RUN_ID\n- filename: $EXPECTED_FILENAME\n- byte size: $EXPECTED_SIZE\n- SHA-256: $EXPECTED_SHA256\n- npm ci: PASS\n- lint: PASS\n- full typecheck: PASS\n- build: PASS\n- full tests: PASS\n- built-preview smoke: PASS\n- production deployment: NOT PERFORMED"
       - name: Gate summary
         run: echo 'EXACT ARTIFACT BUILD GATE: PASS'
