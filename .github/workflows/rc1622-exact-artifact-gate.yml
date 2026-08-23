@@ -1,0 +1,113 @@
+name: RC1.6.2.2 Exact Artifact Gate
+
+on:
+  push:
+    branches:
+      - canonical/sites-rc1.6.2.2-product-catalog-768-hotfix
+    paths:
+      - .github/workflows/rc1622-exact-artifact-gate.yml
+
+permissions:
+  contents: read
+
+jobs:
+  exact-artifact-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      EXPECTED_FILENAME: IceFresh_RC1_6_2_2_Product_Catalog_768_Hotfix_QA.zip
+      EXPECTED_SIZE: '2177234'
+      EXPECTED_SHA256: b23edae56807ba2e3ea97dce3cee85630025462f0d17fba934e479b1a5741238
+      DRIVE_FILE_ID: 18eDDeafnyYOlvpfBYtgekiZXCVelXVmY
+      VITE_SUPABASE_URL: https://example.supabase.co
+      VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
+
+    steps:
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Set up Deno 2
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Fetch exact candidate from immutable Drive object
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifact="${RUNNER_TEMP}/${EXPECTED_FILENAME}"
+          curl --fail --location --retry 3 --retry-delay 2 \
+            "https://drive.usercontent.google.com/download?id=${DRIVE_FILE_ID}&export=download&confirm=t" \
+            --output "${artifact}"
+          test -f "${artifact}"
+
+      - name: Identity gate before extraction
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifact="${RUNNER_TEMP}/${EXPECTED_FILENAME}"
+          actual_name="$(basename "${artifact}")"
+          actual_size="$(stat -c '%s' "${artifact}")"
+          actual_sha="$(sha256sum "${artifact}" | cut -d ' ' -f1)"
+          printf 'Filename: %s\nByte size: %s\nSHA-256: %s\n' "${actual_name}" "${actual_size}" "${actual_sha}"
+          test "${actual_name}" = "${EXPECTED_FILENAME}"
+          test "${actual_size}" = "${EXPECTED_SIZE}"
+          test "${actual_sha}" = "${EXPECTED_SHA256}"
+          echo 'IDENTITY GATE: PASS (extraction has not started)'
+
+      - name: Extract verified candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          candidate="${RUNNER_TEMP}/exact-candidate"
+          mkdir -p "${candidate}"
+          unzip -q "${RUNNER_TEMP}/${EXPECTED_FILENAME}" -d "${candidate}"
+          test -f "${candidate}/package.json"
+
+      - name: npm ci
+        working-directory: ${{ runner.temp }}/exact-candidate
+        run: npm ci
+
+      - name: Lint
+        working-directory: ${{ runner.temp }}/exact-candidate
+        run: npm run lint
+
+      - name: Typecheck
+        working-directory: ${{ runner.temp }}/exact-candidate
+        run: npm run typecheck
+
+      - name: Build
+        working-directory: ${{ runner.temp }}/exact-candidate
+        run: npm run build
+
+      - name: Full test suite (82 baseline)
+        working-directory: ${{ runner.temp }}/exact-candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test tests/*.test.mjs | tee "${RUNNER_TEMP}/tests.log"
+          grep -Eq '# pass[[:space:]]+82' "${RUNNER_TEMP}/tests.log"
+          grep -Eq '# fail[[:space:]]+0' "${RUNNER_TEMP}/tests.log"
+
+      - name: Built-preview smoke
+        working-directory: ${{ runner.temp }}/exact-candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run preview:built >"${RUNNER_TEMP}/preview.log" 2>&1 &
+          preview_pid=$!
+          trap 'kill "${preview_pid}" 2>/dev/null || true' EXIT
+          ready=0
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error http://127.0.0.1:8787/ >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          test "${ready}" = '1'
+          curl --fail --silent --show-error http://127.0.0.1:8787/public-site.css | grep -q 'container-name:product-catalog'
+          curl --fail --silent --show-error http://127.0.0.1:8787/sw.js | grep -q 'icefresh-public-v4'
+          echo 'BUILT PREVIEW SMOKE: PASS'
