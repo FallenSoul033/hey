@@ -1,9 +1,8 @@
 name: IceFresh CI
 
 on:
-  pull_request:
-  push:
-    branches: [main]
+  pull_request_target:
+    types: [opened, reopened]
 
 permissions:
   contents: read
@@ -87,8 +86,20 @@ jobs:
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ env.VITE_SUPABASE_PUBLISHABLE_KEY }}
         run: npm run build
       - name: Full tests
+        id: tests
         working-directory: ${{ runner.temp }}/exact-candidate
-        run: node --test tests/*.test.mjs
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test tests/*.test.mjs | tee "$RUNNER_TEMP/tests.log"
+          total="$(awk '$1=="#" && $2=="tests"{print $3}' "$RUNNER_TEMP/tests.log" | tail -1)"
+          passed="$(awk '$1=="#" && $2=="pass"{print $3}' "$RUNNER_TEMP/tests.log" | tail -1)"
+          failed="$(awk '$1=="#" && $2=="fail"{print $3}' "$RUNNER_TEMP/tests.log" | tail -1)"
+          test -n "$total" && test -n "$passed" && test -n "$failed"
+          test "$failed" = "0"
+          echo "total=$total" >> "$GITHUB_OUTPUT"
+          echo "passed=$passed" >> "$GITHUB_OUTPUT"
+          echo "failed=$failed" >> "$GITHUB_OUTPUT"
       - name: Built-preview smoke
         working-directory: ${{ runner.temp }}/exact-candidate
         shell: bash
@@ -99,20 +110,37 @@ jobs:
           trap 'kill "$pid" 2>/dev/null || true' EXIT
           for attempt in $(seq 1 30); do
             if curl --fail --silent http://127.0.0.1:8787/ -o "$RUNNER_TEMP/smoke.html"; then
-              test -s "$RUNNER_TEMP/smoke.html"
+              bytes="$(stat -c '%s' "$RUNNER_TEMP/smoke.html")"
+              test "$bytes" -gt 0
               ! grep -Eiq 'Server error|TypeError:|Unhandled' "$RUNNER_TEMP/preview.log"
-              echo "built-preview smoke response bytes=$(stat -c '%s' "$RUNNER_TEMP/smoke.html")"
+              echo "built-preview smoke response bytes=$bytes"
               exit 0
             fi
             sleep 1
           done
           cat "$RUNNER_TEMP/preview.log"
           exit 1
-      - name: Publish exact gate PASS evidence
+      - name: Publish final gate evidence
         env:
           GH_TOKEN: ${{ github.token }}
+          TESTS_TOTAL: ${{ steps.tests.outputs.total }}
+          TESTS_PASSED: ${{ steps.tests.outputs.passed }}
+          TESTS_FAILED: ${{ steps.tests.outputs.failed }}
         shell: bash
         run: |
-          gh pr comment 8 --repo FallenSoul033/hey --body "RC1.6.2.1 exact-artifact gate PASS\n\n- run_id: $GITHUB_RUN_ID\n- filename: $EXPECTED_FILENAME\n- byte size: $EXPECTED_SIZE\n- SHA-256: $EXPECTED_SHA256\n- npm ci: PASS\n- lint: PASS\n- full typecheck: PASS\n- build: PASS\n- full tests: PASS\n- built-preview smoke: PASS\n- production deployment: NOT PERFORMED"
+          gh pr comment "${{ github.event.pull_request.number }}" --repo FallenSoul033/hey --body "RC1.6.2.1 exact-artifact gate PASS
+
+- run_id: $GITHUB_RUN_ID
+- filename: $EXPECTED_FILENAME
+- byte size: $EXPECTED_SIZE
+- SHA-256: $EXPECTED_SHA256
+- exact identity: PASS before extraction
+- npm ci: PASS
+- lint: PASS
+- full typecheck: PASS
+- build: PASS
+- tests: PASS — ${TESTS_PASSED}/${TESTS_TOTAL}, failed ${TESTS_FAILED}
+- built-preview smoke: PASS
+- production deployment: NOT PERFORMED"
       - name: Gate summary
         run: echo 'EXACT ARTIFACT BUILD GATE: PASS'
