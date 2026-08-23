@@ -1,8 +1,8 @@
 name: IceFresh CI
 
 on:
-  pull_request_target:
-    types: [opened, reopened, ready_for_review, synchronize]
+  issue_comment:
+    types: [created]
 
 permissions:
   contents: read
@@ -12,6 +12,7 @@ permissions:
 
 jobs:
   exact-artifact-build:
+    if: github.event.issue.pull_request && github.event.issue.number == 8 && github.event.comment.body == '/run-rc1621-exact-gate'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
@@ -128,7 +129,7 @@ jobs:
           TESTS_FAILED: ${{ steps.tests.outputs.failed }}
         shell: bash
         run: |
-          gh pr comment "${{ github.event.pull_request.number }}" --repo FallenSoul033/hey --body "RC1.6.2.1 exact-artifact gate PASS
+          gh pr comment 8 --repo FallenSoul033/hey --body "RC1.6.2.1 exact-artifact gate PASS
 
 - run_id: $GITHUB_RUN_ID
 - filename: $EXPECTED_FILENAME
