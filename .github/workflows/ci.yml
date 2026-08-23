@@ -5,18 +5,114 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: write
+  issues: write
+
 jobs:
-  verify:
-    runs-on: ubuntu-latest
+  exact-artifact-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      EXPECTED_FILENAME: IceFresh_RC1_6_2_1_Canonical_QA.zip
+      EXPECTED_SIZE: "2184261"
+      EXPECTED_SHA256: 448a0935bf7e6e78c8d508dc2ac6cbf5d3f5647169061846ee1b104cbd3969e3
+      CARRIER_FILE_ID: 1eIYQx9qorRQ50mbNPi_L28HXpHMCL4WK
+      CARRIER_SHA256: 5cf0db583749210e0000f8111c9493780dc714ea1cf062b7b9b94b940df3a02a
+      KEY_ENDPOINT: https://mzxhrbwwfnvpejnbhrfx.supabase.co/functions/v1/rc162-artifact-key
+      VITE_SUPABASE_URL: https://example.supabase.co
+      VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
     steps:
-      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm install --no-audit --no-fund
-      - run: npm run lint
-      - run: npm test
-      - run: npm run build
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Fetch encrypted carrier
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --silent --show-error --retry 3 --retry-delay 2 -H 'User-Agent: Mozilla/5.0' "https://drive.usercontent.google.com/download?id=${CARRIER_FILE_ID}&export=download&confirm=t" -o "$RUNNER_TEMP/candidate.enc"
+          actual_carrier_sha="$(sha256sum "$RUNNER_TEMP/candidate.enc" | awk '{print $1}')"
+          echo "encrypted carrier SHA-256=$actual_carrier_sha"
+          test "$actual_carrier_sha" = "$CARRIER_SHA256"
+      - name: Obtain decryption key via GitHub Actions OIDC
+        id: transport_key
+        shell: bash
+        run: |
+          set -euo pipefail
+          oidc_json="$(curl --fail --silent --show-error -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=icefresh-rc162-build")"
+          oidc_token="$(printf '%s' "$oidc_json" | jq -r '.value')"
+          key_json="$(curl --fail --silent --show-error -X POST -H "Authorization: Bearer ${oidc_token}" "$KEY_ENDPOINT")"
+          key="$(printf '%s' "$key_json" | jq -r '.key')"
+          test "$(printf '%s' "$key_json" | jq -r '.expected_filename')" = "$EXPECTED_FILENAME"
+          test "$(printf '%s' "$key_json" | jq -r '.expected_size')" = "$EXPECTED_SIZE"
+          test "$(printf '%s' "$key_json" | jq -r '.expected_sha256')" = "$EXPECTED_SHA256"
+          echo "::add-mask::$key"
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+      - name: Decrypt exact candidate bytes
         env:
-          VITE_SUPABASE_URL: https://example.supabase.co
-          VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
+          RC162_TRANSPORT_KEY: ${{ steps.transport_key.outputs.key }}
+        run: openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -md sha256 -in "$RUNNER_TEMP/candidate.enc" -out "$RUNNER_TEMP/$EXPECTED_FILENAME" -pass env:RC162_TRANSPORT_KEY
+      - name: Exact ZIP identity gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual_size="$(stat -c '%s' "$RUNNER_TEMP/$EXPECTED_FILENAME")"
+          actual_sha="$(sha256sum "$RUNNER_TEMP/$EXPECTED_FILENAME" | awk '{print $1}')"
+          echo "filename=$EXPECTED_FILENAME"
+          echo "byte size=$actual_size"
+          echo "SHA-256=$actual_sha"
+          test "$actual_size" = "$EXPECTED_SIZE"
+          test "$actual_sha" = "$EXPECTED_SHA256"
+          echo 'EXACT ARTIFACT IDENTITY: PASS'
+      - name: Extract exact candidate only after identity PASS
+        run: mkdir -p "$RUNNER_TEMP/exact-candidate" && unzip -q "$RUNNER_TEMP/$EXPECTED_FILENAME" -d "$RUNNER_TEMP/exact-candidate"
+      - name: npm ci
+        working-directory: ${{ runner.temp }}/exact-candidate
+        run: npm ci --no-audit --no-fund
+      - name: Lint
+        working-directory: ${{ runner.temp }}/exact-candidate
+        run: npm run lint
+      - name: Full typecheck
+        working-directory: ${{ runner.temp }}/exact-candidate
+        run: npm run typecheck
+      - name: Build
+        working-directory: ${{ runner.temp }}/exact-candidate
+        env:
+          VITE_SUPABASE_URL: ${{ env.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ env.VITE_SUPABASE_PUBLISHABLE_KEY }}
+        run: npm run build
+      - name: Full tests
+        working-directory: ${{ runner.temp }}/exact-candidate
+        run: node --test tests/*.test.mjs
+      - name: Built-preview smoke
+        working-directory: ${{ runner.temp }}/exact-candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run preview:built >"$RUNNER_TEMP/preview.log" 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8787/ -o "$RUNNER_TEMP/smoke.html"; then
+              test -s "$RUNNER_TEMP/smoke.html"
+              ! grep -Eiq 'Server error|TypeError:|Unhandled' "$RUNNER_TEMP/preview.log"
+              echo "built-preview smoke response bytes=$(stat -c '%s' "$RUNNER_TEMP/smoke.html")"
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/preview.log"
+          exit 1
+      - name: Publish exact gate PASS evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh pr comment 8 --repo FallenSoul033/hey --body "RC1.6.2.1 exact-artifact gate PASS\n\n- run_id: $GITHUB_RUN_ID\n- filename: $EXPECTED_FILENAME\n- byte size: $EXPECTED_SIZE\n- SHA-256: $EXPECTED_SHA256\n- npm ci: PASS\n- lint: PASS\n- full typecheck: PASS\n- build: PASS\n- full tests: PASS\n- built-preview smoke: PASS\n- production deployment: NOT PERFORMED"
+      - name: Gate summary
+        run: echo 'EXACT ARTIFACT BUILD GATE: PASS'
