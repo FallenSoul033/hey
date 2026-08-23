@@ -1,8 +1,8 @@
 name: IceFresh CI
 
 on:
-  issue_comment:
-    types: [created]
+  push:
+    branches: [main]
 
 permissions:
   contents: read
@@ -12,7 +12,6 @@ permissions:
 
 jobs:
   exact-artifact-build:
-    if: github.event.issue.pull_request && github.event.issue.number == 8 && github.event.comment.body == '/run-rc1621-exact-gate'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
