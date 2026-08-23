@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
-      EXPECTED_FILENAME: IceFresh_RC1_6_2_DEV_BUILD_GATE_v5.zip
+      EXPECTED_FILENAME: IceFresh_RC1_6_2_Canonical_QA.zip
       EXPECTED_SIZE: "2184536"
       EXPECTED_SHA256: 95ee0240991070260ab7a50d3c32a4d129e79d00a7f7d7334e87b90c53acc3b0
       CARRIER_FILE_ID: 15cc-YZnYgFYXCpUWkrjzpUPwADyGAY09
