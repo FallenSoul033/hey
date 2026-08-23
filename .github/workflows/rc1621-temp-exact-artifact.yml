@@ -23,6 +23,10 @@ jobs:
       VITE_SUPABASE_URL: https://example.supabase.co
       VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
     steps:
+      - name: Publish START evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr comment 8 --repo FallenSoul033/hey --body "RC1.6.2.1 exact-artifact gate START — run_id=$GITHUB_RUN_ID"
       - uses: actions/setup-node@v4
         with:
           node-version: 22
