@@ -1,0 +1,230 @@
+name: RC1.6.2 Exact Artifact Build Gate
+
+on:
+  push:
+    branches:
+      - ci/rc162-exact-artifact-build-gate
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  exact-artifact-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      EXPECTED_FILENAME: IceFresh_RC1_6_2_DEV_BUILD_GATE.zip
+      EXPECTED_SIZE: "2178282"
+      EXPECTED_SHA256: b5d4536cf2b2165797e6a1792ad7015bdf8ca81ddf0281539aa45bfb38226a35
+      CARRIER_FILE_ID: 1MPMlupRXUrk8BHTT7WFli1QTN33Zgwrj
+      CARRIER_SHA256: 3083d57b651577209ddfb6d5f9cae580d417d38a1c87f0eb2870a5ec01964b59
+      KEY_ENDPOINT: https://mzxhrbwwfnvpejnbhrfx.supabase.co/functions/v1/rc162-artifact-key
+      VITE_SUPABASE_URL: https://example.supabase.co
+      VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
+
+    steps:
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Deno 2
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Fetch encrypted carrier
+        shell: bash
+        run: |
+          set -euo pipefail
+          carrier="$RUNNER_TEMP/rc162.enc"
+          url="https://drive.usercontent.google.com/download?id=${CARRIER_FILE_ID}&export=download&confirm=t"
+          curl --fail --location --silent --show-error \
+            --retry 3 --retry-delay 2 \
+            -H 'User-Agent: Mozilla/5.0' \
+            "$url" -o "$carrier"
+          actual_carrier_sha="$(sha256sum "$carrier" | awk '{print $1}')"
+          actual_carrier_size="$(stat -c '%s' "$carrier")"
+          echo "encrypted carrier size=${actual_carrier_size}"
+          echo "encrypted carrier sha256=${actual_carrier_sha}"
+          if [[ "$actual_carrier_sha" != "$CARRIER_SHA256" ]]; then
+            echo 'STOP: encrypted carrier mismatch/interstitial.' >&2
+            exit 20
+          fi
+
+      - name: Obtain decryption key via GitHub Actions OIDC
+        id: transport_key
+        shell: bash
+        run: |
+          set -euo pipefail
+          oidc_json="$(curl --fail --silent --show-error \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=icefresh-rc162-build")"
+          oidc_token="$(printf '%s' "$oidc_json" | jq -r '.value')"
+          key_json="$(curl --fail --silent --show-error \
+            -X POST \
+            -H "Authorization: Bearer ${oidc_token}" \
+            "$KEY_ENDPOINT")"
+          transport_key="$(printf '%s' "$key_json" | jq -r '.key')"
+          meta_name="$(printf '%s' "$key_json" | jq -r '.expected_filename')"
+          meta_size="$(printf '%s' "$key_json" | jq -r '.expected_size')"
+          meta_sha="$(printf '%s' "$key_json" | jq -r '.expected_sha256')"
+          if [[ -z "$transport_key" || "$transport_key" == null ]]; then
+            echo 'STOP: OIDC transport key was not issued.' >&2
+            exit 21
+          fi
+          if [[ "$meta_name" != "$EXPECTED_FILENAME" || "$meta_size" != "$EXPECTED_SIZE" || "$meta_sha" != "$EXPECTED_SHA256" ]]; then
+            echo 'STOP: OIDC transport metadata mismatch.' >&2
+            exit 22
+          fi
+          echo "::add-mask::$transport_key"
+          echo "key=$transport_key" >> "$GITHUB_OUTPUT"
+
+      - name: Decrypt exact candidate bytes
+        shell: bash
+        env:
+          RC162_TRANSPORT_KEY: ${{ steps.transport_key.outputs.key }}
+        run: |
+          set -euo pipefail
+          openssl enc -d -aes-256-cbc \
+            -pbkdf2 -iter 200000 -md sha256 \
+            -in "$RUNNER_TEMP/rc162.enc" \
+            -out "$RUNNER_TEMP/$EXPECTED_FILENAME" \
+            -pass env:RC162_TRANSPORT_KEY
+          chmod 600 "$RUNNER_TEMP/$EXPECTED_FILENAME"
+
+      - name: Exact ZIP identity gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifact="$RUNNER_TEMP/$EXPECTED_FILENAME"
+          actual_size="$(stat -c '%s' "$artifact")"
+          actual_sha="$(sha256sum "$artifact" | awk '{print $1}')"
+          echo "filename=$EXPECTED_FILENAME"
+          echo "byte size=$actual_size"
+          echo "SHA-256=$actual_sha"
+          if [[ "$actual_size" != "$EXPECTED_SIZE" ]]; then
+            echo "STOP: byte-size mismatch; expected $EXPECTED_SIZE." >&2
+            exit 30
+          fi
+          if [[ "$actual_sha" != "$EXPECTED_SHA256" ]]; then
+            echo "STOP: SHA-256 mismatch; expected $EXPECTED_SHA256." >&2
+            exit 31
+          fi
+          echo 'EXACT ARTIFACT IDENTITY: PASS'
+
+      - name: Extract exact ZIP only after identity PASS
+        shell: bash
+        run: |
+          set -euo pipefail
+          candidate="$RUNNER_TEMP/exact-candidate"
+          rm -rf "$candidate"
+          mkdir -p "$candidate"
+          unzip -q "$RUNNER_TEMP/$EXPECTED_FILENAME" -d "$candidate"
+          test -f "$candidate/package.json"
+          test -f "$candidate/package-lock.json"
+
+      - name: npm ci
+        id: npm_ci
+        continue-on-error: true
+        working-directory: ${{ runner.temp }}/exact-candidate
+        run: npm ci --no-audit --no-fund
+
+      - name: Lint exact candidate
+        id: lint
+        if: always() && steps.npm_ci.outcome == 'success'
+        continue-on-error: true
+        working-directory: ${{ runner.temp }}/exact-candidate
+        run: npm run lint
+
+      - name: Full project typecheck
+        id: typecheck
+        if: always() && steps.npm_ci.outcome == 'success'
+        continue-on-error: true
+        working-directory: ${{ runner.temp }}/exact-candidate
+        run: npm run typecheck
+
+      - name: Build exact candidate
+        id: build
+        if: always() && steps.npm_ci.outcome == 'success'
+        continue-on-error: true
+        working-directory: ${{ runner.temp }}/exact-candidate
+        run: npm run build
+        env:
+          VITE_SUPABASE_URL: ${{ env.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ env.VITE_SUPABASE_PUBLISHABLE_KEY }}
+
+      - name: Run every test file including build-dependent tests
+        id: tests
+        if: always() && steps.build.outcome == 'success'
+        continue-on-error: true
+        working-directory: ${{ runner.temp }}/exact-candidate
+        run: node --test tests/*.test.mjs
+
+      - name: Built-preview HTTP smoke
+        id: smoke
+        if: always() && steps.build.outcome == 'success'
+        continue-on-error: true
+        working-directory: ${{ runner.temp }}/exact-candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/rc162-built-preview.log"
+          npm run preview:built >"$log" 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 30); do
+            if ! kill -0 "$pid" 2>/dev/null; then
+              cat "$log" >&2
+              echo 'Built preview exited before becoming reachable.' >&2
+              exit 40
+            fi
+            if curl --fail --silent --show-error "http://127.0.0.1:8787/" -o "$RUNNER_TEMP/rc162-smoke.html" 2>/dev/null; then
+              bytes="$(stat -c '%s' "$RUNNER_TEMP/rc162-smoke.html")"
+              echo "built-preview smoke reachable on port 8787; response bytes=${bytes}"
+              test "$bytes" -gt 0
+              if grep -Eiq 'Server error|TypeError:|Unhandled' "$log"; then
+                cat "$log" >&2
+                echo 'Built preview emitted a runtime error.' >&2
+                exit 42
+              fi
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "$log" >&2
+          echo 'Built preview did not become reachable on port 8787.' >&2
+          exit 41
+
+      - name: Exact artifact gate summary
+        if: always()
+        shell: bash
+        env:
+          NPM_CI_OUTCOME: ${{ steps.npm_ci.outcome }}
+          LINT_OUTCOME: ${{ steps.lint.outcome }}
+          TYPECHECK_OUTCOME: ${{ steps.typecheck.outcome }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          TESTS_OUTCOME: ${{ steps.tests.outcome }}
+          SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
+        run: |
+          set -euo pipefail
+          echo "npm ci: $NPM_CI_OUTCOME"
+          echo "lint: $LINT_OUTCOME"
+          echo "typecheck: $TYPECHECK_OUTCOME"
+          echo "build: $BUILD_OUTCOME"
+          echo "tests: $TESTS_OUTCOME"
+          echo "built-preview smoke: $SMOKE_OUTCOME"
+          failed=0
+          for result in "$NPM_CI_OUTCOME" "$LINT_OUTCOME" "$TYPECHECK_OUTCOME" "$BUILD_OUTCOME" "$TESTS_OUTCOME" "$SMOKE_OUTCOME"; do
+            if [[ "$result" != "success" ]]; then failed=1; fi
+          done
+          if [[ "$failed" -ne 0 ]]; then
+            echo 'EXACT ARTIFACT BUILD GATE: FAIL' >&2
+            exit 90
+          fi
+          echo 'EXACT ARTIFACT BUILD GATE: PASS'
