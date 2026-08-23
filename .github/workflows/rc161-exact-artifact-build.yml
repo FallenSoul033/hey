@@ -132,18 +132,29 @@ jobs:
           test -f "$candidate/package-lock.json"
 
       - name: npm ci
+        id: npm_ci
+        continue-on-error: true
         working-directory: ${{ runner.temp }}/exact-candidate
         run: npm ci --no-audit --no-fund
 
       - name: Lint exact candidate
+        id: lint
+        if: always()
+        continue-on-error: true
         working-directory: ${{ runner.temp }}/exact-candidate
         run: npm run lint
 
       - name: Full project typecheck
+        id: typecheck
+        if: always()
+        continue-on-error: true
         working-directory: ${{ runner.temp }}/exact-candidate
         run: npx --no-install tsc --noEmit
 
       - name: Build exact candidate
+        id: build
+        if: always()
+        continue-on-error: true
         working-directory: ${{ runner.temp }}/exact-candidate
         run: npm run build
         env:
@@ -151,10 +162,16 @@ jobs:
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ env.VITE_SUPABASE_PUBLISHABLE_KEY }}
 
       - name: Run every test file including build-dependent tests
+        id: tests
+        if: always()
+        continue-on-error: true
         working-directory: ${{ runner.temp }}/exact-candidate
         run: node --test tests/*.test.mjs
 
       - name: Built-preview smoke
+        id: smoke
+        if: always()
+        continue-on-error: true
         working-directory: ${{ runner.temp }}/exact-candidate
         shell: bash
         run: |
@@ -182,3 +199,33 @@ jobs:
           cat "$log" >&2
           echo 'Built preview did not become reachable on expected local ports.' >&2
           exit 41
+
+      - name: Exact artifact gate summary
+        if: always()
+        shell: bash
+        env:
+          NPM_CI_OUTCOME: ${{ steps.npm_ci.outcome }}
+          LINT_OUTCOME: ${{ steps.lint.outcome }}
+          TYPECHECK_OUTCOME: ${{ steps.typecheck.outcome }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          TESTS_OUTCOME: ${{ steps.tests.outcome }}
+          SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
+        run: |
+          set -euo pipefail
+          echo "npm ci: $NPM_CI_OUTCOME"
+          echo "lint: $LINT_OUTCOME"
+          echo "typecheck: $TYPECHECK_OUTCOME"
+          echo "build: $BUILD_OUTCOME"
+          echo "tests: $TESTS_OUTCOME"
+          echo "built-preview smoke: $SMOKE_OUTCOME"
+          failed=0
+          for result in "$NPM_CI_OUTCOME" "$LINT_OUTCOME" "$TYPECHECK_OUTCOME" "$BUILD_OUTCOME" "$TESTS_OUTCOME" "$SMOKE_OUTCOME"; do
+            if [[ "$result" != "success" ]]; then
+              failed=1
+            fi
+          done
+          if [[ "$failed" -ne 0 ]]; then
+            echo 'EXACT ARTIFACT BUILD GATE: FAIL' >&2
+            exit 90
+          fi
+          echo 'EXACT ARTIFACT BUILD GATE: PASS'
