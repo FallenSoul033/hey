@@ -3,6 +3,8 @@ name: RC1.6.2.1 Exact Artifact Build Gate
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: read
@@ -24,6 +26,7 @@ jobs:
       VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
     steps:
       - name: Publish START evidence
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh pr comment 8 --repo FallenSoul033/hey --body "RC1.6.2.1 exact-artifact gate START — run_id=$GITHUB_RUN_ID"
@@ -110,7 +113,15 @@ jobs:
           done
           cat "$RUNNER_TEMP/preview.log"
           exit 1
+      - name: Report PASS via OIDC endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          oidc_json="$(curl --fail --silent --show-error -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=icefresh-rc162-build")"
+          oidc_token="$(printf '%s' "$oidc_json" | jq -r '.value')"
+          curl --fail --silent --show-error -X POST -H "Authorization: Bearer ${oidc_token}" "${KEY_ENDPOINT}?report=pass&run_id=${GITHUB_RUN_ID}"
       - name: Publish PASS evidence
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
