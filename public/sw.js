@@ -1,16 +1,19 @@
-const CACHE_NAME = 'icefresh-v12-3d3-production';
+const CACHE_NAME = 'icefresh-rc1-6-v4';
 const APP_SHELL = '/';
+// Keep install small: only the shell and control-plane assets are precached.
+// Product/hero/gallery images are cached on first use so mobile users do not
+// download desktop imagery in the background.
 const PRECACHE = [
   '/',
-  '/styles.css?v=12.0.0-3d2',
-  '/admin.css?v=12.0.0-3d2',
-  '/public-site.css?v=12.0.0-3d2',
-  '/core.js?v=12.0.0-3d2',
-  '/routes.js?v=12.0.0-3d2',
-  '/app.js?v=12.0.0-3d2',
-  '/config.js?v=12.0.0-3d2',
+  '/styles.css',
+  '/admin.css',
+  '/public-site.css',
+  '/core.js',
+  '/routes.js',
+  '/app.js',
+  '/config.js',
   '/assets/logo.webp',
-  '/manifest.webmanifest?v=12.0.0-3d2',
+  '/manifest.webmanifest',
   '/icon.svg',
   '/version.json'
 ];
@@ -54,7 +57,9 @@ async function staticResponse(request) {
 }
 
 function isCacheableStatic(pathname) {
-  return PRECACHE.includes(pathname) || pathname.startsWith('/assets/');
+  return PRECACHE.includes(pathname)
+    || pathname.startsWith('/assets/')
+    || pathname === '/icefresh-social.jpg';
 }
 
 self.addEventListener('fetch', event => {

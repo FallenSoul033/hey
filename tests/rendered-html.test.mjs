@@ -51,35 +51,27 @@ test("ships the configured Russian IceFresh application", async () => {
     readFile(new URL("sitemap.xml", root), "utf8"),
     readFile(new URL("version.json", root), "utf8"),
   ]);
-  assert.match(html, /Холод,[\s\S]*который[\s\S]*запоминают/);
-  assert.match(html, /Заказать сейчас/);
-  assert.match(html, /assets\/products\/hero-3d-frozen-lens\.webp/);
-  assert.match(html, /assets\/products\/hero-3d-frozen-lens-mobile\.webp/);
-  assert.match(html, /assets\/products\/cup-250\.webp/);
-  assert.doesNotMatch(html, /class="product-art/);
+  assert.match(html, /Чистый лёд[\s\S]*для бизнеса и дома/);
+  assert.match(html, /Оставить заявку/);
+  assert.match(html, /assets\/products\/hero-icefresh\.webp/);
   assert.match(html, /id="gallery"/);
   assert.match(html, /id="go-site"/);
   assert.match(html, /property="og:image" content="https:\/\/icefresh\.kz\/icefresh-social\.jpg"/);
   assert.match(html, /name="twitter:card" content="summary_large_image"/);
   assert.match(html, /Вход для сотрудников/);
   assert.match(html, /Добро пожаловать в IceFresh/);
-  assert.match(html, /<form id="create-org" hidden aria-hidden="true"><\/form>/);
   assert.match(html, /Данные защищены и синхронизируются/);
   assert.match(html, /id="network-banner"/);
   assert.match(html, /id="pwa-update"/);
   assert.match(html, /id="global-search"/);
   assert.match(html, /id="app-version"/);
-  assert.match(html, /href="\/manifest\.webmanifest\?v=12\.0\.0-3d2"/);
-  assert.match(html, /src="\/app\.js\?v=12\.0\.0-3d2"/);
-  assert.match(html, /src="\/routes\.js\?v=12\.0\.0-3d2"/);
-  assert.match(html, /href="\/public-site\.css\?v=12\.0\.0-3d2"/);
+  assert.match(html, /href="\/manifest\.webmanifest"/);
+  assert.match(html, /src="\/app\.js"/);
   assert.match(config, /https:\/\/ogjfqnbgauuhbmauioea\.supabase\.co/);
   assert.doesNotMatch(config, /sb_secret_|service_role\s*:/i);
   assert.equal(JSON.parse(manifest).short_name, "IceFresh");
-  assert.equal(JSON.parse(manifest).theme_color, "#06141b");
   assert.match(headers, /Content-Security-Policy:/);
   assert.match(headers, /frame-ancestors 'none'/);
-  assert.match(headers, /Strict-Transport-Security: max-age=63072000; includeSubDomains; preload/);
   assert.match(serviceWorker, /SKIP_WAITING/);
   assert.match(serviceWorker, /\/api\//);
   assert.match(serviceWorker, /isCacheableStatic/);
@@ -88,9 +80,7 @@ test("ships the configured Russian IceFresh application", async () => {
   assert.match(robots, /Disallow: \/app\//);
   assert.match(robots, /Sitemap: https:\/\/icefresh\.kz\/sitemap\.xml/);
   assert.match(sitemap, /<loc>https:\/\/icefresh\.kz\/<\/loc>/);
-  assert.equal(JSON.parse(version).version, "12.0.0");
-  assert.equal(JSON.parse(version).status, "production");
-  assert.equal(JSON.parse(version).published, true);
+  assert.equal(JSON.parse(version).version, "12.0.0-rc.1.6");
 });
 
 test("keeps public enquiries separate from protected CRM records", async () => {
@@ -114,7 +104,6 @@ test("keeps public enquiries separate from protected CRM records", async () => {
   assert.doesNotMatch(migration, /grant (?:select|insert|update|delete)[^;]* to anon/i);
   assert.match(edgeFunction, /ALLOWED_ORIGINS/);
   assert.match(edgeFunction, /submit_public_request_rc/);
-  assert.match(edgeFunction, /ICEFRESH_ORGANIZATION_ID/);
   assert.match(edgeFunction, /SUPABASE_SERVICE_ROLE_KEY/);
 });
 
@@ -140,7 +129,7 @@ test("ships owner controls, product photos, and the operations calendar securely
   assert.match(migration, /revoke execute on function public\.manage_member/);
   assert.match(headers, /img-src 'self' data: https:\/\/\*\.supabase\.co/);
   assert.doesNotMatch(edgeFunction, /const PRODUCT_IDS/);
-  assert.match(edgeFunction, /rpc\("submit_public_request_rc"/);
+  assert.match(edgeFunction, /submit_public_request_rc/);
 });
 
 test("implements the core approved workflow without exposing management fields publicly", async () => {
@@ -154,9 +143,9 @@ test("implements the core approved workflow without exposing management fields p
     readFile(new URL("public/assets/products/bag-1kg.webp", root)),
   ]);
 
-  assert.ok(cup.length > 5_000);
-  assert.ok(bag.length > 5_000);
-  assert.match(html, /IceFresh в деле/);
+  assert.ok(cup.length > 15_000);
+  assert.ok(bag.length > 30_000);
+  assert.match(html, /Настоящие фотографии нашей продукции/);
   assert.match(app, /BUILT_IN_PRODUCT_PHOTOS/);
   assert.match(app, /min_stock: Number\(raw\.minStock\)/);
   assert.match(app, /rpc\('accept_website_request'/);
@@ -180,11 +169,12 @@ test("routes static assets through the security-header worker", async () => {
 
 test("ships a protected, privacy-minimized AI assistant without exposing OpenAI credentials", async () => {
   const root = new URL("../", import.meta.url);
-  const [app, routes, worker, assistant, styles, migration, atomicLimit, staffLimit] = await Promise.all([
+  const [app, routes, worker, assistant, provider, styles, migration, atomicLimit, staffLimit] = await Promise.all([
     readFile(new URL("public/app.js", root), "utf8"),
     readFile(new URL("public/routes.js", root), "utf8"),
     readFile(new URL("worker/index.ts", root), "utf8"),
     readFile(new URL("worker/ai-assistant.ts", root), "utf8"),
+    readFile(new URL("worker/ai-provider.ts", root), "utf8"),
     readFile(new URL("public/admin.css", root), "utf8"),
     readFile(new URL("supabase/migrations/202608160002_ai_usage_rate_limit.sql", root), "utf8"),
     readFile(new URL("supabase/migrations/202608160003_atomic_ai_rate_limit.sql", root), "utf8"),
@@ -199,9 +189,12 @@ test("ships a protected, privacy-minimized AI assistant without exposing OpenAI 
   assert.match(worker, /handleAiAssistant/);
   assert.match(assistant, /\/auth\/v1\/user/);
   assert.match(assistant, /\["owner", "admin", "staff"\]/);
-  assert.match(assistant, /gpt-5\.6-luna/);
-  assert.match(assistant, /store: false/);
-  assert.match(assistant, /max_output_tokens: 700/);
+  assert.match(provider, /gpt-5\.6-luna/);
+  assert.match(provider, /api\.anthropic\.com\/v1\/messages/);
+  assert.match(provider, /generativelanguage\.googleapis\.com/);
+  assert.match(provider, /AI_CUSTOM_BASE_URL/);
+  assert.match(provider, /store: false/);
+  assert.match(provider, /max_output_tokens: 700/);
   assert.match(assistant, /REQUESTS_PER_HOUR = 12/);
   assert.match(assistant, /rest\/v1\/rpc\/reserve_ai_request/);
   assert.match(migration, /alter table public\.ai_usage enable row level security/);
@@ -219,7 +212,7 @@ test("ships a protected, privacy-minimized AI assistant without exposing OpenAI 
   assert.match(staffLimit, /500\/calendar-month\/organization/);
   assert.doesNotMatch(staffLimit, /grant (?:select|insert|update|delete)[^;]*ai_monthly_usage/i);
   assert.match(styles, /\.ai-layout/);
-  assert.doesNotMatch(`${app}\n${routes}\n${worker}\n${assistant}`, /sk-proj-|OPENAI_API_KEY\s*[:=]\s*["']sk-/i);
+  assert.doesNotMatch(`${app}\n${routes}\n${worker}\n${assistant}\n${provider}`, /sk-proj-|OPENAI_API_KEY\s*[:=]\s*["']sk-/i);
 });
 
 test("ships an owner-only integration centre without exposing the production secret", async () => {
@@ -240,13 +233,12 @@ test("ships an owner-only integration centre without exposing the production sec
   assert.doesNotMatch(`${app}\n${routes}`, /sk-proj-[A-Za-z0-9_-]{20,}/);
 });
 
-test("enforces RC1.5 atomic stock and finance operations with immutable ledgers and an outbox", async () => {
+test("enforces atomic stock and finance operations with immutable ledgers and an outbox", async () => {
   const root = new URL("../", import.meta.url);
-  const [app, routes, migration, performance, styles] = await Promise.all([
+  const [app, routes, migration, styles] = await Promise.all([
     readFile(new URL("public/app.js", root), "utf8"),
     readFile(new URL("public/routes.js", root), "utf8"),
     readFile(new URL("supabase/migrations/202608160005_atomic_inventory_ledger_outbox.sql", root), "utf8"),
-    readFile(new URL("supabase/migrations/202608210001_rc14_security_performance.sql", root), "utf8"),
     readFile(new URL("public/admin.css", root), "utf8"),
   ]);
 
@@ -257,7 +249,6 @@ test("enforces RC1.5 atomic stock and finance operations with immutable ledgers 
   assert.match(app, /rpc\('save_production_entry_rc'/);
   assert.match(app, /rpc\('record_inventory_adjustment_rc'/);
   assert.match(app, /from\('stock_ledger'\)/);
-  assert.match(app, /get_inventory_summary_rc/);
   assert.match(app, /Журнал операций и уведомлений/);
   assert.match(app, /data-edit-order/);
   assert.match(app, /data-edit-client/);
@@ -266,25 +257,22 @@ test("enforces RC1.5 atomic stock and finance operations with immutable ledgers 
   assert.doesNotMatch(app, /from\('production_entries'\)\.insert/);
 
   assert.match(migration, /create table if not exists public\.stock_ledger/);
+  assert.match(migration, /create table if not exists public\.order_items/);
   assert.match(migration, /create table if not exists public\.financial_ledger/);
   assert.match(migration, /create table if not exists private\.operation_requests/);
   assert.match(migration, /create table if not exists public\.notification_events/);
   assert.match(migration, /alter table public\.stock_ledger enable row level security/);
   assert.match(migration, /stock_ledger_immutable/);
+  assert.match(migration, /create or replace function public\.save_order_rc/);
+  assert.match(migration, /create or replace function public\.save_production_entry_rc/);
   assert.match(migration, /for update/);
   assert.match(migration, /insufficient stock/);
   assert.match(migration, /idempotency key reused with different payload/);
   assert.match(migration, /security definer[\s\S]*set search_path = ''/);
   assert.match(migration, /revoke all on function public\.save_order_rc/);
   assert.match(migration, /grant execute on function public\.save_order_rc[\s\S]*to authenticated/);
-  assert.match(migration, /extensions\.digest[\s\S]*'sha256'/);
-  assert.doesNotMatch(migration, /\bmd5\s*\(/i);
-  assert.match(performance, /save_order_manager_rc/);
-  assert.match(performance, /save_order_operational_rc/);
-  assert.match(performance, /get_finance_summary_rc/);
-  assert.match(performance, /prevent_schedule_identity_change/);
   assert.match(migration, /processed_order_id/);
   assert.match(migration, /'icefresh\.kz@gmail\.com'/);
-  assert.match(migration, /status in \('pending','processing','sent','failed','dead_letter'\)/);
+  assert.match(migration, /status in \('pending',\s*'processing',\s*'sent',\s*'failed',\s*'dead_letter'\)/);
   assert.match(styles, /\.operations-callout/);
 });

@@ -1,7 +1,7 @@
 {
   "name": "IceFresh",
-  "version": "12.0.0",
-  "release": "production-v12",
-  "status": "production",
-  "published": true
+  "version": "12.0.0-rc.1.6",
+  "release": "RC1.6 Multi-item Safety + Premium Product Photos",
+  "status": "rc",
+  "published": false
 }

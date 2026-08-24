@@ -50,10 +50,8 @@ export default defineConfig(async () => {
 
   return {
     server: {
-      host: "127.0.0.1",
-      ...(isCodexSeatbeltSandbox
-        ? { watch: { useFsEvents: false, usePolling: true } }
-        : {}),
+      host: '127.0.0.1',
+      ...(isCodexSeatbeltSandbox ? { watch: { useFsEvents: false, usePolling: true } } : {}),
     },
     plugins: [
       vinext(),

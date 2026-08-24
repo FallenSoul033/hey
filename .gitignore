@@ -2,7 +2,6 @@
 
 # dependencies
 /node_modules
-/.pnpm-cache/
 /.pnp
 .pnp.*
 .yarn/*
@@ -39,3 +38,6 @@ yarn-error.log*
 /.wrangler/
 /outputs/
 /work/
+
+# generated Cloudflare runtime/binding types
+/worker-configuration.d.ts

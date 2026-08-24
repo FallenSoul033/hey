@@ -1,0 +1,8 @@
+IceFresh RC1.5 final gate — use ONE standard Codex run only (not deep scan):
+1) npm ci; upgrade Vite to >=8.0.16 and regenerate lockfile if needed.
+2) npm run build && npm run lint && node --test tests/*.test.mjs.
+3) Run one standard Codex Security repository scan; fix only validated release blockers and re-run affected tests.
+4) Use Sites control plane for project appgprj_6a7f95ab99fc819199edf9fc21a5eb6a.
+5) Coordinate deploy with Supabase migrations 202608160005_atomic_inventory_ledger_outbox.sql and 202608210001_rc14_security_performance.sql. Do not leave backend/frontend versions mismatched.
+6) Smoke test public site + owner/admin/staff flows; verify HSTS/noindex/PWA; rerun Supabase Security Advisor.
+7) If all green, set public/version.json published=true and release to Production v12.

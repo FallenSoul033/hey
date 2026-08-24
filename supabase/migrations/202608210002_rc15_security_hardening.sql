@@ -118,4 +118,3 @@ revoke all on function public.submit_public_request_rc(uuid,uuid,text,text,text,
   from public, anon, authenticated;
 grant execute on function public.submit_public_request_rc(uuid,uuid,text,text,text,text,numeric,text,text)
   to service_role;
-

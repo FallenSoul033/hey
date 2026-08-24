@@ -18,7 +18,7 @@ export const metadata: Metadata = {
     description: "Лёд в стакане и термопакетах. Заказы для бизнеса, мероприятий и дома.",
     images: [
       {
-        url: "/icefresh-social.jpg",
+        url: "/icefresh-social.png",
         width: 1760,
         height: 917,
         alt: "Лёд IceFresh в стакане и термопакетах",
@@ -29,7 +29,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "IceFresh — лёд для бизнеса и дома",
     description: "Лёд в стакане и термопакетах. Заказы для бизнеса, мероприятий и дома.",
-    images: ["/icefresh-social.jpg"],
+    images: ["/icefresh-social.png"],
   },
 };
 

@@ -1,0 +1,29 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": [
+      "es2022",
+      "webworker"
+    ],
+    "allowJs": false,
+    "skipLibCheck": true,
+    "incremental": false,
+    "types": [
+      "./worker-configuration.d.ts"
+    ]
+  },
+  "include": [
+    "worker-configuration.d.ts",
+    "worker/**/*.ts",
+    "db/index.ts",
+    "db/schema.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    ".next",
+    "app",
+    "supabase"
+  ]
+}

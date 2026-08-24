@@ -10,13 +10,21 @@
 --   * durable notification outbox;
 --   * disable self-service creation of extra IceFresh organisations.
 
-create extension if not exists pgcrypto with schema extensions;
-
 create schema if not exists private;
 
 -- Prevent accidental creation of a second IceFresh tenant from the browser.
 -- Existing organisations are not deleted by this migration.
 revoke execute on function public.create_organization(text, text) from authenticated;
+
+-- Hard preflight: IceFresh is currently a single-tenant deployment. Refuse to
+-- change accounting rules while duplicate IceFresh organisations exist. This is
+-- intentionally fail-closed so an operator must resolve the duplicate explicitly.
+do $$
+begin
+  if (select count(*) from public.organizations where lower(btrim(name)) = 'icefresh') > 1 then
+    raise exception 'RC1 preflight failed: duplicate IceFresh organizations detected';
+  end if;
+end $$;
 
 alter table public.website_requests
   add column if not exists processed_order_id uuid references public.orders(id) on delete set null;
@@ -28,7 +36,7 @@ create table if not exists private.operation_requests (
   organization_id uuid not null references public.organizations(id) on delete cascade,
   operation_type text not null check (char_length(operation_type) between 2 and 80),
   idempotency_key uuid not null,
-  request_fingerprint text not null check (char_length(request_fingerprint) = 64),
+  request_fingerprint text not null check (char_length(request_fingerprint) = 32),
   result jsonb,
   created_by uuid references auth.users(id) on delete set null,
   created_at timestamptz not null default now(),
@@ -230,28 +238,30 @@ select organization_id,product_id,quantity,0,'migration','migration',id,
 from public.production_entries
 on conflict (organization_id,entry_key) do nothing;
 
--- Existing active orders are treated as reservations, not physical shipments.
+-- Existing confirmed/preparation orders reserve stock. A merely new order does
+-- not reserve anything, matching save_order_rc semantics.
 insert into public.stock_ledger(
   organization_id,product_id,on_hand_delta,reserved_delta,movement_type,source_type,source_id,
   operation_key,entry_key,description,created_by,occurred_at
 )
 select oi.organization_id,oi.product_id,0,oi.quantity,'reservation','order',oi.order_id,
        gen_random_uuid(),'rc1:migration:reservation:'||oi.id::text,
-       'Перенос существующего активного заказа в резерв',o.created_by,o.created_at
+       'Перенос подтверждённого заказа в резерв',o.created_by,o.created_at
 from public.order_items oi join public.orders o on o.id=oi.order_id
-where o.status not in ('Отменён','Доставлен','Выполнен')
+where o.status in ('Подтверждён','В производстве','Собирается','Готов')
 on conflict (organization_id,entry_key) do nothing;
 
--- Existing delivered/completed orders are treated as shipped and as recognised sales.
+-- Orders already handed to delivery or completed have physically left on-hand
+-- stock. Revenue is still recognised only for delivered/completed statuses below.
 insert into public.stock_ledger(
   organization_id,product_id,on_hand_delta,reserved_delta,movement_type,source_type,source_id,
   operation_key,entry_key,description,created_by,occurred_at
 )
 select oi.organization_id,oi.product_id,-oi.quantity,0,'shipment','order',oi.order_id,
        gen_random_uuid(),'rc1:migration:shipment:'||oi.id::text,
-       'Перенос ранее выполненного заказа как отгрузки',o.created_by,o.updated_at
+       'Перенос ранее отгруженного заказа как физической отгрузки',o.created_by,o.updated_at
 from public.order_items oi join public.orders o on o.id=oi.order_id
-where o.status in ('Доставлен','Выполнен')
+where o.status in ('На доставке','Доставлен','Выполнен')
 on conflict (organization_id,entry_key) do nothing;
 
 insert into public.financial_ledger(organization_id,order_id,entry_type,amount,operation_key,entry_key,description,created_by,occurred_at)
@@ -323,6 +333,7 @@ language plpgsql security definer set search_path='' as $$
 declare
   v_uid uuid := (select auth.uid());
   v_org uuid;
+  v_actor_role text;
   v_client_name text;
   v_order_id uuid := p_order_id;
   v_old_status text;
@@ -346,7 +357,7 @@ declare
   v_new_sale boolean := false;
 begin
   if v_uid is null then raise exception 'authentication required'; end if;
-  select organization_id into v_org from public.profiles
+  select organization_id, role into v_org, v_actor_role from public.profiles
    where id=v_uid and active and organization_id is not null and role in ('owner','admin','staff');
   if v_org is null then raise exception 'active organization membership required'; end if;
   perform private.validate_business_actor(v_org);
@@ -356,7 +367,7 @@ begin
   if p_items is null or jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items)=0 then raise exception 'order requires at least one item'; end if;
   if p_paid_amount is null or p_paid_amount < 0 then raise exception 'invalid paid amount'; end if;
 
-  v_fingerprint := encode(extensions.digest(convert_to(concat_ws('|',coalesce(p_order_id::text,''),p_order_date::text,p_client_id::text,p_items::text,p_paid_amount::text,p_status),'UTF8'),'sha256'),'hex');
+  v_fingerprint := encode(extensions.digest(concat_ws('|',coalesce(p_order_id::text,''),p_order_date::text,p_client_id::text,p_items::text,p_paid_amount::text,p_status), 'sha256'), 'hex');
   v_result := private.reserve_operation(v_org,'save_order_rc',p_idempotency_key,v_fingerprint,v_uid);
   if v_result is not null then return (v_result->>'order_id')::uuid; end if;
 
@@ -464,6 +475,7 @@ begin
   -- Payments are independent cash events. Decreasing them requires record_refund_rc.
   select coalesce(sum(case when entry_type='payment' then amount when entry_type='refund' then -amount else 0 end),0)
     into v_current_paid from public.financial_ledger where order_id=v_order_id;
+  if v_actor_role='staff' and p_paid_amount <> v_current_paid then raise exception 'manager access required for payment changes'; end if;
   if p_paid_amount < v_current_paid then raise exception 'paid amount cannot be decreased; record a refund instead'; end if;
   v_payment_delta := p_paid_amount-v_current_paid;
   if v_payment_delta > 0 then
@@ -501,7 +513,7 @@ begin
   if p_amount is null or p_amount<=0 or char_length(v_reason)<3 then raise exception 'invalid refund'; end if;
   perform 1 from public.orders where id=p_order_id and organization_id=v_org for update;
   if not found then raise exception 'order not found'; end if;
-  v_fp:=encode(extensions.digest(convert_to(concat_ws('|',p_order_id::text,p_amount::text,v_reason),'UTF8'),'sha256'),'hex');
+  v_fp:=encode(extensions.digest(concat_ws('|',p_order_id::text,p_amount::text,v_reason), 'sha256'), 'hex');
   v_result:=private.reserve_operation(v_org,'record_refund_rc',p_idempotency_key,v_fp,v_uid);
   if v_result is not null then return (v_result->>'paid_amount')::numeric; end if;
   select coalesce(sum(case when entry_type='payment' then amount when entry_type='refund' then -amount else 0 end),0)
@@ -533,7 +545,7 @@ begin
   if v_name is null then raise exception 'active employee not found'; end if;
   perform 1 from public.products where id=p_product_id and organization_id=v_org and active for update;
   if not found then raise exception 'active product not found'; end if;
-  v_fp:=encode(extensions.digest(convert_to(concat_ws('|',coalesce(p_entry_id::text,''),p_production_date::text,p_product_id,p_quantity::text,p_employee_id::text),'UTF8'),'sha256'),'hex');
+  v_fp:=encode(extensions.digest(concat_ws('|',coalesce(p_entry_id::text,''),p_production_date::text,p_product_id,p_quantity::text,p_employee_id::text), 'sha256'), 'hex');
   v_result:=private.reserve_operation(v_org,'save_production_entry_rc',p_idempotency_key,v_fp,v_uid);
   if v_result is not null then return (v_result->>'entry_id')::uuid; end if;
   if v_id is null then
@@ -574,7 +586,7 @@ begin
   if p_quantity_delta is null or p_quantity_delta=0 or char_length(v_reason)<5 then raise exception 'invalid adjustment'; end if;
   perform 1 from public.products where id=p_product_id and organization_id=v_org for update;
   if not found then raise exception 'product not found'; end if;
-  v_fp:=encode(extensions.digest(convert_to(concat_ws('|',p_product_id,p_quantity_delta::text,v_reason),'UTF8'),'sha256'),'hex');
+  v_fp:=encode(extensions.digest(concat_ws('|',p_product_id,p_quantity_delta::text,v_reason), 'sha256'), 'hex');
   v_result:=private.reserve_operation(v_org,'record_inventory_adjustment_rc',p_idempotency_key,v_fp,v_uid);
   if v_result is not null then return (v_result->>'on_hand')::numeric; end if;
   select * into v_stock from private.current_stock(v_org,p_product_id);

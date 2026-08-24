@@ -430,25 +430,3 @@ begin
     alter publication supabase_realtime add table public.order_change_signal;
   end if;
 end $$;
-
--- Preserve immutable tenant/creator identity even when another organization
--- member legitimately edits the mutable schedule fields.
-create or replace function private.prevent_schedule_identity_change()
-returns trigger
-language plpgsql
-set search_path = ''
-as $$
-begin
-  if new.organization_id is distinct from old.organization_id
-     or new.created_by is distinct from old.created_by then
-    raise exception 'schedule identity fields are immutable';
-  end if;
-  return new;
-end;
-$$;
-revoke all on function private.prevent_schedule_identity_change() from public, anon, authenticated;
-
-drop trigger if exists schedule_items_identity_immutable_trg on public.schedule_items;
-create trigger schedule_items_identity_immutable_trg
-  before update on public.schedule_items
-  for each row execute function private.prevent_schedule_identity_change();

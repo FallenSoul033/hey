@@ -1,0 +1,292 @@
+TAP version 13
+# Subtest: RC1.5 release version is consistent
+ok 1 - RC1.5 release version is consistent
+  ---
+  duration_ms: 7.477364
+  type: 'test'
+  ...
+# Subtest: HSTS and strong browser headers are present
+ok 2 - HSTS and strong browser headers are present
+  ---
+  duration_ms: 2.185089
+  type: 'test'
+  ...
+# Subtest: Vite dev server is loopback-only
+ok 3 - Vite dev server is loopback-only
+  ---
+  duration_ms: 2.116807
+  type: 'test'
+  ...
+# Subtest: Gemini key is sent in header instead of URL
+ok 4 - Gemini key is sent in header instead of URL
+  ---
+  duration_ms: 1.233411
+  type: 'test'
+  ...
+# Subtest: Public order endpoint has production-only CORS and DB atomic submission
+ok 5 - Public order endpoint has production-only CORS and DB atomic submission
+  ---
+  duration_ms: 0.898655
+  type: 'test'
+  ...
+# Subtest: Public request migration serializes rate limiting and protects secret
+ok 6 - Public request migration serializes rate limiting and protects secret
+  ---
+  duration_ms: 2.01578
+  type: 'test'
+  ...
+# Subtest: Pending accounting migration uses SHA-256, not MD5
+ok 7 - Pending accounting migration uses SHA-256, not MD5
+  ---
+  duration_ms: 1.326579
+  type: 'test'
+  ...
+# Subtest: Registration UI requires an invite
+ok 8 - Registration UI requires an invite
+  ---
+  duration_ms: 1.995977
+  type: 'test'
+  ...
+# Subtest: React RSC packages are aligned at 19.2.8
+ok 9 - React RSC packages are aligned at 19.2.8
+  ---
+  duration_ms: 1.434369
+  type: 'test'
+  ...
+# Subtest: release identifiers are consistent across app, version metadata and service worker
+ok 10 - release identifiers are consistent across app, version metadata and service worker
+  ---
+  duration_ms: 9.188313
+  type: 'test'
+  ...
+# Subtest: HTML shell has no duplicate ids and all images have alt text
+ok 11 - HTML shell has no duplicate ids and all images have alt text
+  ---
+  duration_ms: 2.489891
+  type: 'test'
+  ...
+# Subtest: public order form has anti-bot, consent and bounded quantity controls
+ok 12 - public order form has anti-bot, consent and bounded quantity controls
+  ---
+  duration_ms: 2.980799
+  type: 'test'
+  ...
+# Subtest: public order submission protects against double submit and exposes retry-friendly errors
+ok 13 - public order submission protects against double submit and exposes retry-friendly errors
+  ---
+  duration_ms: 2.326971
+  type: 'test'
+  ...
+# Subtest: staff UI does not expose financial analytics in operational order and client tables
+ok 14 - staff UI does not expose financial analytics in operational order and client tables
+  ---
+  duration_ms: 1.731473
+  type: 'test'
+  ...
+# Subtest: staff order form hides finance fields and uses finance-free server RPC
+ok 15 - staff order form hides finance fields and uses finance-free server RPC
+  ---
+  duration_ms: 3.214466
+  type: 'test'
+  ...
+# Subtest: server-side order RPC blocks payment changes by staff
+ok 16 - server-side order RPC blocks payment changes by staff
+  ---
+  duration_ms: 1.263746
+  type: 'test'
+  ...
+# Subtest: bulk backup is hidden from staff in the rendered CRM
+ok 17 - bulk backup is hidden from staff in the rendered CRM
+  ---
+  duration_ms: 2.774523
+  type: 'test'
+  ...
+# Subtest: route matrix keeps owner-only integrations and manager-only finance/operations
+ok 18 - route matrix keeps owner-only integrations and manager-only finance/operations
+  ---
+  duration_ms: 2.448833
+  type: 'test'
+  ...
+# Subtest: core order calculations handle multi-item totals and escape untrusted text
+ok 19 - core order calculations handle multi-item totals and escape untrusted text
+  ---
+  duration_ms: 2.23243
+  type: 'test'
+  ...
+# Subtest: internal app paths are excluded from public sitemap and robots indexing
+ok 20 - internal app paths are excluded from public sitemap and robots indexing
+  ---
+  duration_ms: 1.357966
+  type: 'test'
+  ...
+# Subtest: PWA caches only explicit static assets and excludes API requests
+ok 21 - PWA caches only explicit static assets and excludes API requests
+  ---
+  duration_ms: 0.643532
+  type: 'test'
+  ...
+# Subtest: RC1 uses multi-item orders and separates physical stock from reservations
+ok 22 - RC1 uses multi-item orders and separates physical stock from reservations
+  ---
+  duration_ms: 8.01114
+  type: 'test'
+  ...
+# Subtest: RC1 keeps payment, refund and sale recognition as different financial events
+ok 23 - RC1 keeps payment, refund and sale recognition as different financial events
+  ---
+  duration_ms: 3.351881
+  type: 'test'
+  ...
+# Subtest: RC1 disables browser self-service organisation creation and preserves server-side checks
+ok 24 - RC1 disables browser self-service organisation creation and preserves server-side checks
+  ---
+  duration_ms: 3.904134
+  type: 'test'
+  ...
+# Subtest: RC1 uses immutable stock and finance ledgers and idempotency
+ok 25 - RC1 uses immutable stock and finance ledgers and idempotency
+  ---
+  duration_ms: 3.046212
+  type: 'test'
+  ...
+# Subtest: RC1 provides a server-side multi-provider AI gateway without exposing provider secrets
+ok 26 - RC1 provides a server-side multi-provider AI gateway without exposing provider secrets
+  ---
+  duration_ms: 3.267658
+  type: 'test'
+  ...
+# Subtest: RC1 does not show management financial KPIs to staff
+ok 27 - RC1 does not show management financial KPIs to staff
+  ---
+  duration_ms: 2.534977
+  type: 'test'
+  ...
+# Subtest: RC1 migration classifies legacy order statuses consistently with runtime semantics
+ok 28 - RC1 migration classifies legacy order statuses consistently with runtime semantics
+  ---
+  duration_ms: 0.990594
+  type: 'test'
+  ...
+# Subtest: RC1 test script is compatible with the declared Node 22 engine range
+ok 29 - RC1 test script is compatible with the declared Node 22 engine range
+  ---
+  duration_ms: 1.021602
+  type: 'test'
+  ...
+# Subtest: the empty URL is the public IceFresh site
+ok 30 - the empty URL is the public IceFresh site
+  ---
+  duration_ms: 8.080131
+  type: 'test'
+  ...
+# Subtest: clean CRM URLs and legacy hash links resolve to the same protected route
+ok 31 - clean CRM URLs and legacy hash links resolve to the same protected route
+  ---
+  duration_ms: 1.778222
+  type: 'test'
+  ...
+# Subtest: CRM routes remain protected while enquiries are available to staff
+ok 32 - CRM routes remain protected while enquiries are available to staff
+  ---
+  duration_ms: 1.781438
+  type: 'test'
+  ...
+# Subtest: RC1.4 uses responsive LCP imagery and removes base64 logo payload
+ok 33 - RC1.4 uses responsive LCP imagery and removes base64 logo payload
+  ---
+  duration_ms: 7.595372
+  type: 'test'
+  ...
+# Subtest: PWA install budget stays small and product imagery is runtime cached
+ok 34 - PWA install budget stays small and product imagery is runtime cached
+  ---
+  duration_ms: 3.995365
+  type: 'test'
+  ...
+# Subtest: CRM computes authoritative stock and finance totals server-side
+ok 35 - CRM computes authoritative stock and finance totals server-side
+  ---
+  duration_ms: 2.423232
+  type: 'test'
+  ...
+# Subtest: staff order API is finance-free at both read and write boundaries
+ok 36 - staff order API is finance-free at both read and write boundaries
+  ---
+  duration_ms: 4.653143
+  type: 'test'
+  ...
+# Subtest: realtime keeps staff finance-free and coalesces refresh storms
+ok 37 - realtime keeps staff finance-free and coalesces refresh storms
+  ---
+  duration_ms: 2.958711
+  type: 'test'
+  ...
+# Subtest: public order endpoint enforces body bytes, independent HMAC secret and unambiguous tenant
+ok 38 - public order endpoint enforces body bytes, independent HMAC secret and unambiguous tenant
+  ---
+  duration_ms: 3.210385
+  type: 'test'
+  ...
+# Subtest: AI assistant uses environment-provided Supabase configuration
+ok 39 - AI assistant uses environment-provided Supabase configuration
+  ---
+  duration_ms: 2.013245
+  type: 'test'
+  ...
+# Subtest: service worker registration is deferred off the critical boot path
+ok 40 - service worker registration is deferred off the critical boot path
+  ---
+  duration_ms: 1.193911
+  type: 'test'
+  ...
+# Subtest: mobile CRM has accessible quick navigation and dismissible sidebar
+ok 41 - mobile CRM has accessible quick navigation and dismissible sidebar
+  ---
+  duration_ms: 0.700947
+  type: 'test'
+  ...
+# Subtest: core small-text palette reaches WCAG AA normal-text contrast on white
+ok 42 - core small-text palette reaches WCAG AA normal-text contrast on white
+  ---
+  duration_ms: 0.496209
+  type: 'test'
+  ...
+# Subtest: public form and actions expose usable states and readable labels
+ok 43 - public form and actions expose usable states and readable labels
+  ---
+  duration_ms: 0.201111
+  type: 'test'
+  ...
+# Subtest: public site remains available when the external Supabase SDK CDN fails
+ok 44 - public site remains available when the external Supabase SDK CDN fails
+  ---
+  duration_ms: 0.17589
+  type: 'test'
+  ...
+# Subtest: registration copy makes invite-only access clear
+ok 45 - registration copy makes invite-only access clear
+  ---
+  duration_ms: 0.50169
+  type: 'test'
+  ...
+# Subtest: mobile public header prioritises customer order action over staff login
+ok 46 - mobile public header prioritises customer order action over staff login
+  ---
+  duration_ms: 0.202427
+  type: 'test'
+  ...
+# Subtest: mobile global search occupies its own full-width row
+ok 47 - mobile global search occupies its own full-width row
+  ---
+  duration_ms: 0.195726
+  type: 'test'
+  ...
+1..47
+# tests 47
+# suites 0
+# pass 47
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 185.649163
