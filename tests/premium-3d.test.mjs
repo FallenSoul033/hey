@@ -166,3 +166,10 @@ test('20. lazy chunks are bounded and absent from the critical static import pat
   assert.match(bootstrapSource, /import\('\/premium-3d\.js'\)/);
   assert.doesNotMatch(html, /premium-3d(?:-bootstrap)?\.js/);
 });
+
+test('21. product-safe composition masks 3D away from cups and keeps facets restrained', () => {
+  assert.match(css, /mask-image:radial-gradient\(ellipse 46% 54% at 50% 48%,transparent 0 62%,#000 86%\)/);
+  assert.match(css, /hero-3d-layer\[data-enhancement="active"\]\{opacity:\.42\}/);
+  for (const scale of ['0.20', '0.18', '0.16']) assert.match(sceneSource, new RegExp(`scale = ${scale.replace('.', '\\.')}`));
+  assert.match(sceneSource, /clamp\(alpha, 0\.03, 0\.28\)/);
+});

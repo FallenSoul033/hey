@@ -6,7 +6,7 @@ The visitor should understand IceFresh, see real products, and reach the order f
 
 ## Approaches considered
 
-1. **Recommended: lazy, dependency-free WebGL hero layer over the real hero image.** A small dynamically imported module renders procedural ice/glass geometry behind non-interactive product photography. It preserves identity, avoids a critical-path 3D dependency, and has deterministic fallbacks.
+1. **Recommended: lazy, dependency-free WebGL hero layer around the real hero image.** A small dynamically imported module renders restrained procedural ice/glass geometry only at the composition perimeter. A central exclusion mask keeps cups, labels, and packaging visually untouched and authoritative. It preserves identity, avoids a critical-path 3D dependency, and has deterministic fallbacks.
 2. Three.js scene with physically based models. Higher visual ceiling, but a much larger lazy chunk, more texture memory, and unnecessary dependency risk for this first review gate.
 3. CSS-only parallax. Fast and robust, but the preflight proved that earlier “3D” work already used this approach and did not satisfy the requested immersive WebGL delta.
 
@@ -31,7 +31,7 @@ The canvas is purely presentational. Existing headings, product names, image alt
 
 ## Decision log
 
-- **D1:** Limit WebGL to the hero and keep real product photography above it.
+- **D1:** Limit WebGL to the hero perimeter; mask the product-safe centre so real photography, cups, labels, and packaging remain visually dominant and untouched.
 - **D2:** Use dynamic import with viewport/capability gates and no new dependency.
 - **D3:** Treat every failure as a silent enhancement fallback, never as a page failure.
 - **D4:** Preserve current copy, CTA hierarchy, product mapping, SEO, order path, and service worker behavior.

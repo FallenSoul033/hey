@@ -26,10 +26,10 @@ void main() {
   vec3 offset;
   float scale;
   float phase;
-  if (uCube < 0.5) { offset = vec3(-1.15, 0.88, 0.25); scale = 0.44; phase = 0.0; }
-  else if (uCube < 1.5) { offset = vec3(1.18, 0.25, -0.15); scale = 0.34; phase = 1.7; }
-  else { offset = vec3(0.82, -1.12, 0.05); scale = 0.28; phase = 3.4; }
-  float drift = sin(uTime * 0.42 + phase) * 0.10;
+  if (uCube < 0.5) { offset = vec3(-1.72, 1.34, 0.25); scale = 0.20; phase = 0.0; }
+  else if (uCube < 1.5) { offset = vec3(1.68, 1.08, -0.15); scale = 0.18; phase = 1.7; }
+  else { offset = vec3(1.58, -1.42, 0.05); scale = 0.16; phase = 3.4; }
+  float drift = sin(uTime * 0.42 + phase) * 0.05;
   mat3 rotation = rotateZ(uTime * 0.08 + phase) * rotateY(uTime * 0.17 + phase * 0.4) * rotateX(0.48 + sin(uTime * 0.12 + phase) * 0.2);
   vec3 world = rotation * (aPosition * scale) + offset + vec3(0.0, drift + uParallax, 0.0);
   vNormal = normalize(rotation * aNormal);
@@ -57,8 +57,8 @@ void main() {
   vec3 clearIce = vec3(0.82, 0.98, 1.0);
   vec3 colour = mix(deepIce, clearIce, 0.34 + diffuse * 0.46 + facet * 0.12);
   colour += specular * vec3(1.0);
-  float alpha = 0.10 + fresnel * 0.48 + specular * 0.35;
-  gl_FragColor = vec4(colour, clamp(alpha, 0.08, 0.72));
+  float alpha = 0.04 + fresnel * 0.20 + specular * 0.12;
+  gl_FragColor = vec4(colour, clamp(alpha, 0.03, 0.28));
 }`;
 
 function cubeGeometry() {
