@@ -293,6 +293,19 @@ function updateRobots(target) {
   document.documentElement.dataset.screen = target;
 }
 
+function setupPremium3DEnhancement() {
+  const host = document.querySelector('[data-icefresh-3d]');
+  if (!host) return;
+  const start = () => import('/premium-3d-bootstrap.js')
+    .then(module => module.bootstrapPremium3D(host))
+    .catch(() => {
+      host.dataset.enhancement = 'fallback';
+      host.dataset.fallbackReason = 'bootstrap-load-failed';
+    });
+  if ('requestIdleCallback' in window) window.requestIdleCallback(start, { timeout: 1800 });
+  else setTimeout(start, 600);
+}
+
 function showOnly(target) {
   $('#public-site').hidden = target !== 'public';
   $('#auth-screen').hidden = target !== 'auth';
@@ -409,6 +422,7 @@ async function init() {
   $('#logo').src = $('#auth-logo').src = document.querySelector('.onboarding-logo').src = logoUrl;
   document.querySelectorAll('.public-logo').forEach(element => { element.src = logoUrl; });
   $('#public-order-form [name=started_at]').value = String(Date.now());
+  setupPremium3DEnhancement();
   $('#auth-form [name=full_name]').parentElement.hidden = true;
   $('#setup-warning').hidden = true;
   $('#setup-warning').style.display = 'none';
