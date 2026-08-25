@@ -6,6 +6,8 @@ uniform float uTime;
 uniform float uCube;
 uniform float uAspect;
 uniform float uParallax;
+uniform float uVariant;
+uniform float uMist;
 varying vec3 vNormal;
 varying vec3 vPosition;
 
@@ -25,13 +27,28 @@ mat3 rotateZ(float angle) {
 void main() {
   vec3 offset;
   float scale;
-  float phase;
-  if (uCube < 0.5) { offset = vec3(-1.72, 1.34, 0.25); scale = 0.20; phase = 0.0; }
-  else if (uCube < 1.5) { offset = vec3(1.68, 1.08, -0.15); scale = 0.18; phase = 1.7; }
-  else { offset = vec3(1.58, -1.42, 0.05); scale = 0.16; phase = 3.4; }
-  float drift = sin(uTime * 0.42 + phase) * 0.05;
+  float phase = uCube * 1.37;
+  float falling = step(0.5, uVariant);
+  if (falling > 0.5 && uMist < 0.5) {
+    float lane = mod(uCube, 3.0) - 1.0;
+    float row = floor(uCube / 3.0);
+    offset = vec3(lane * 1.38 + sin(phase) * 0.14, mod(3.0 - uTime * (0.42 + row * 0.05) - phase, 6.0) - 3.0, (mod(uCube, 2.0) - 0.5) * 0.62);
+    scale = 0.13 + mod(uCube, 3.0) * 0.025;
+  } else if (uMist > 0.5) {
+    offset = vec3(mod(uCube, 2.0) < 0.5 ? -0.92 : 0.94, sin(uTime * 0.16 + phase) * 0.46, -0.35);
+    scale = falling > 0.5 ? 0.24 : 0.19;
+  } else if (uCube < 0.5) {
+    offset = vec3(-1.72, 1.34, 0.25); scale = 0.20;
+  } else if (uCube < 1.5) {
+    offset = vec3(1.68, 1.08, -0.15); scale = 0.18;
+  } else {
+    offset = vec3(1.58, -1.42, 0.05); scale = 0.16;
+  }
+  float drift = sin(uTime * 0.42 + phase) * (uMist > 0.5 ? 0.11 : 0.05);
   mat3 rotation = rotateZ(uTime * 0.08 + phase) * rotateY(uTime * 0.17 + phase * 0.4) * rotateX(0.48 + sin(uTime * 0.12 + phase) * 0.2);
-  vec3 world = rotation * (aPosition * scale) + offset + vec3(0.0, drift + uParallax, 0.0);
+  vec3 local = aPosition * scale;
+  if (uMist > 0.5) local *= vec3(3.2, 0.58, 0.42);
+  vec3 world = rotation * local + offset + vec3(0.0, drift + uParallax, 0.0);
   vNormal = normalize(rotation * aNormal);
   vPosition = world;
   float depth = 4.1 - world.z;
@@ -42,6 +59,7 @@ void main() {
 const FRAGMENT_SHADER = `
 precision mediump float;
 uniform float uTime;
+uniform float uMist;
 varying vec3 vNormal;
 varying vec3 vPosition;
 
@@ -57,8 +75,10 @@ void main() {
   vec3 clearIce = vec3(0.82, 0.98, 1.0);
   vec3 colour = mix(deepIce, clearIce, 0.34 + diffuse * 0.46 + facet * 0.12);
   colour += specular * vec3(1.0);
-  float alpha = 0.04 + fresnel * 0.20 + specular * 0.12;
-  gl_FragColor = vec4(colour, clamp(alpha, 0.03, 0.28));
+  float alpha = uMist > 0.5
+    ? 0.018 + fresnel * 0.055
+    : 0.04 + fresnel * 0.20 + specular * 0.12;
+  gl_FragColor = vec4(colour, clamp(alpha, 0.018, uMist > 0.5 ? 0.09 : 0.28));
 }`;
 
 function cubeGeometry() {
@@ -130,6 +150,7 @@ export function mountPremiumIceScene(host, options = {}) {
   let destroyed = false;
   let parallax = 0;
   const started = performance.now();
+  const horeca = options.variant === 'horeca';
 
   const releaseResources = () => {
     if (buffer) gl.deleteBuffer(buffer);
@@ -179,9 +200,14 @@ export function mountPremiumIceScene(host, options = {}) {
     gl.uniform1f(gl.getUniformLocation(program, 'uTime'), (now - started) / 1000);
     gl.uniform1f(gl.getUniformLocation(program, 'uAspect'), canvas.width / canvas.height);
     gl.uniform1f(gl.getUniformLocation(program, 'uParallax'), parallax);
+    gl.uniform1f(gl.getUniformLocation(program, 'uVariant'), horeca ? 1 : 0);
     const cube = gl.getUniformLocation(program, 'uCube');
-    for (let index = 0; index < 3; index += 1) {
+    const mist = gl.getUniformLocation(program, 'uMist');
+    const solidCount = horeca ? 6 : 3;
+    const totalCount = solidCount + 2;
+    for (let index = 0; index < totalCount; index += 1) {
       gl.uniform1f(cube, index);
+      gl.uniform1f(mist, index >= solidCount ? 1 : 0);
       gl.drawArrays(gl.TRIANGLES, 0, 36);
     }
     frame = requestAnimationFrame(render);

@@ -6,10 +6,10 @@ const root = new URL('../', import.meta.url);
 const read = p => readFile(new URL(p, root), 'utf8');
 
 const assets = [
-  ['cup250', 'public/assets/products/cup-250-premium-1600.webp'],
-  ['bag1', 'public/assets/products/bag-1kg-premium-1600.webp'],
-  ['bag2', 'public/assets/products/bag-2kg-premium-1600.webp'],
-  ['35e74838-68cb-4fb7-9e93-7e30675c48d8', 'public/assets/products/horeca-5kg-premium-1600.webp'],
+  ['cup250', 'public/assets/products-approved/IceFresh_01_Лед_в_стакане_250г_MASTER.png'],
+  ['bag1', 'public/assets/products-approved/IceFresh_02_Лед_в_термопакете_1кг_MASTER.png'],
+  ['bag2', 'public/assets/products-approved/IceFresh_03_Лед_в_термопакете_2кг_MASTER.png'],
+  ['35e74838-68cb-4fb7-9e93-7e30675c48d8', 'public/assets/products-approved/IceFresh_04_HoReCa_5кг_MASTER.png'],
 ];
 
 test('all four premium IceFresh product photos are bundled', async () => {
@@ -29,8 +29,9 @@ test('product photo mapping covers cup, 1kg, 2kg and HoReCa 5kg', async () => {
   assert.match(app, /HoReCa\|5\\s\*кг/);
 });
 
-test('packaged products use contain crop while HoReCa keeps scene cover', async () => {
+test('approved masters are authoritative and packaged products use contain crop', async () => {
   const [app, css] = await Promise.all([read('public/app.js'), read('public/public-site.css')]);
+  assert.match(app, /if \(builtIn\) return builtIn/);
   assert.match(app, /product-photo--pack/);
   assert.match(app, /product-photo--scene/);
   assert.match(css, /product-photo--pack\{object-fit:contain/);
@@ -39,5 +40,6 @@ test('packaged products use contain crop while HoReCa keeps scene cover', async 
 
 test('service worker cache revision is bumped for the new storefront assets', async () => {
   const sw = await read('public/sw.js');
-  assert.match(sw, /icefresh-rc1-6-v4/);
+  assert.match(sw, /icefresh-rc1-6-v5/);
+  assert.match(sw, /pathname\.startsWith\('\/premium-3d'\)/);
 });

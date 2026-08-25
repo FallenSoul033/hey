@@ -6,17 +6,15 @@ const root = new URL('../', import.meta.url);
 const read = path => readFile(new URL(path, root), 'utf8');
 const bytes = async path => (await stat(new URL(path, root))).size;
 
-test('RC1.4 uses responsive LCP imagery and removes base64 logo payload', async () => {
-  const [html, app, sw] = await Promise.all([read('public/app-shell.html'), read('public/app.js'), read('public/sw.js')]);
-  assert.match(html, /hero-icefresh-mobile\.webp 720w/);
-  assert.match(html, /<picture><source media="\(max-width: 720px\)"/);
+test('public shell preloads the approved 2kg hero and removes base64 logo payload', async () => {
+  const [html, app] = await Promise.all([read('public/app-shell.html'), read('public/app.js')]);
+  assert.match(html, /IceFresh_03_Лед_в_термопакете_2кг_MASTER\.png/);
+  assert.doesNotMatch(html, /hero-icefresh(?:-mobile)?\.webp/);
   assert.match(html, /fetchpriority="high"/);
   assert.match(html, /src="\/assets\/logo\.webp"/);
   assert.doesNotMatch(html, /logo-data\.js/);
   assert.doesNotMatch(app, /window\.ICEFRESH_LOGO/);
-  assert.doesNotMatch(sw, /hero-icefresh(?:-mobile)?\.webp/);
   assert.ok(await bytes('public/assets/logo.webp') < 40_000);
-  assert.ok(await bytes('public/assets/products/hero-icefresh-mobile.webp') < 80_000);
   assert.ok(await bytes('public/icefresh-social.jpg') < 100_000);
 });
 

@@ -71,7 +71,10 @@ export function bootstrapPremium3D(host, options = {}) {
     try {
       const rendererModule = await moduleLoader();
       if (destroyed) return;
-      scene = rendererModule.mountPremiumIceScene(host, { mobile: environment.viewportWidth < 768 });
+      scene = rendererModule.mountPremiumIceScene(host, {
+        mobile: environment.viewportWidth < 768,
+        variant: host.dataset.icefresh3dVariant || 'hero',
+      });
       finish('active');
     } catch {
       fallback('module-or-context-failed');

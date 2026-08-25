@@ -53,7 +53,8 @@ test("ships the configured Russian IceFresh application", async () => {
   ]);
   assert.match(html, /Чистый лёд[\s\S]*для бизнеса и дома/);
   assert.match(html, /Оставить заявку/);
-  assert.match(html, /assets\/products\/hero-icefresh\.webp/);
+  assert.match(html, /assets\/products-approved\/IceFresh_03_Лед_в_термопакете_2кг_MASTER\.png/);
+  assert.match(html, /rel="icon" href="\/favicon\.svg"/);
   assert.match(html, /id="gallery"/);
   assert.match(html, /id="go-site"/);
   assert.match(html, /property="og:image" content="https:\/\/icefresh\.kz\/icefresh-social\.jpg"/);

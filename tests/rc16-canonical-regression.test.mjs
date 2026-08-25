@@ -6,10 +6,10 @@ const root = new URL('../', import.meta.url);
 const read = p => readFile(new URL(p, root), 'utf8');
 
 const canonicalImages = [
-  'cup-250-premium-1600.webp',
-  'bag-1kg-premium-1600.webp',
-  'bag-2kg-premium-1600.webp',
-  'horeca-5kg-premium-1600.webp',
+  'IceFresh_01_Лед_в_стакане_250г_MASTER.png',
+  'IceFresh_02_Лед_в_термопакете_1кг_MASTER.png',
+  'IceFresh_03_Лед_в_термопакете_2кг_MASTER.png',
+  'IceFresh_04_HoReCa_5кг_MASTER.png',
 ];
 
 test('RC1.6 keeps the full canonical application route surface', async () => {
@@ -36,18 +36,14 @@ test('RC1.6 order editor loads and saves the complete order_items aggregate', as
   assert.doesNotMatch(app, /supabase\.from\('orders'\)\.\s*(?:insert|update|upsert|delete)\s*\(/);
 });
 
-test('RC1.6 canonical product images use exact 1600px WebP asset names only', async () => {
+test('RC1.6 product mapping uses only the approved Drive masters', async () => {
   const app = await read('public/app.js');
   for (const image of canonicalImages) {
-    const info = await stat(new URL(`public/assets/products/${image}`, root));
+    const info = await stat(new URL(`public/assets/products-approved/${image}`, root));
     assert.ok(info.size > 50_000, `${image} must be a real production asset`);
     assert.match(app, new RegExp(image.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
-  for (const oldName of [
-    'cup-250-premium.webp', 'bag-1kg-premium.webp', 'bag-2kg-premium.webp', 'horeca-5kg-premium.webp'
-  ]) {
-    assert.doesNotMatch(app, new RegExp(`(?:^|/)${oldName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
-  }
+  assert.match(app, /if \(builtIn\) return builtIn/);
 });
 
 test('RC1.6 mobile editor and product cards have explicit responsive safeguards', async () => {
@@ -67,11 +63,11 @@ test('RC1.6 mobile editor and product cards have explicit responsive safeguards'
   assert.match(publicCss, /#products\{container-name:product-catalog;container-type:inline-size\}/);
   assert.match(publicCss, /@container product-catalog \(max-width:900px\)\{\.catalog-grid\{grid-template-columns:minmax\(0,1fr\)\}/);
   assert.match(publicCss, /\.catalog-card\{display:grid;grid-template-columns:minmax\(0,210px\) minmax\(0,1fr\)/);
-  assert.match(publicCss, /@container product-catalog \(max-width:640px\)[\s\S]*\.public-product-photo\{height:210px/);
+  assert.match(publicCss, /@container product-catalog \(max-width:640px\)[\s\S]*\.product-media\{height:210px/);
 });
 
 test('RC1.6 service worker cache revision isolates the final premium asset mapping', async () => {
   const sw = await read('public/sw.js');
-  assert.match(sw, /icefresh-rc1-6-v4/);
+  assert.match(sw, /icefresh-rc1-6-v5/);
   assert.match(sw, /pathname\.startsWith\('\/assets\/'\)/);
 });

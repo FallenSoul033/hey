@@ -5,11 +5,13 @@ const SDK_VERSION = '2.111.0';
 const APP_VERSION = '12.0.0-rc.1.6';
 const PRODUCT_IMAGE_BUCKET = 'product-images';
 const BUILT_IN_PRODUCT_PHOTOS = {
-  cup250: '/assets/products/cup-250-premium-1600.webp',
-  bag1: '/assets/products/bag-1kg-premium-1600.webp',
-  bag2: '/assets/products/bag-2kg-premium-1600.webp',
-  '35e74838-68cb-4fb7-9e93-7e30675c48d8': '/assets/products/horeca-5kg-premium-1600.webp'
+  cup250: '/assets/products-approved/IceFresh_01_Лед_в_стакане_250г_MASTER.png',
+  bag1: '/assets/products-approved/IceFresh_02_Лед_в_термопакете_1кг_MASTER.png',
+  bag2: '/assets/products-approved/IceFresh_03_Лед_в_термопакете_2кг_MASTER.png',
+  '35e74838-68cb-4fb7-9e93-7e30675c48d8': '/assets/products-approved/IceFresh_04_HoReCa_5кг_MASTER.png'
 };
+const premium3DHosts = new WeakSet();
+let premium3DBootstrapPromise = null;
 const PRODUCT_IMAGE_TYPES = new Map([
   ['image/jpeg', 'jpg'],
   ['image/png', 'png'],
@@ -262,7 +264,7 @@ function builtInProductPhoto(product) {
   const direct = BUILT_IN_PRODUCT_PHOTOS[product?.id];
   if (direct) return direct;
   const label = `${product?.name || ''} ${product?.weight || ''}`;
-  if (/HoReCa|5\s*кг/i.test(label)) return '/assets/products/horeca-5kg-premium-1600.webp';
+  if (/HoReCa|5\s*кг/i.test(label)) return '/assets/products-approved/IceFresh_04_HoReCa_5кг_MASTER.png';
   return '';
 }
 
@@ -270,8 +272,14 @@ function isPackagedProduct(product) {
   return ['cup250', 'bag1', 'bag2'].includes(product?.id);
 }
 
+function isHorecaProduct(product) {
+  return product?.id === '35e74838-68cb-4fb7-9e93-7e30675c48d8'
+    || /HoReCa|5\s*кг/i.test(`${product?.name || ''} ${product?.weight || ''}`);
+}
+
 function productPhotoUrl(product) {
   const builtIn = builtInProductPhoto(product);
+  if (builtIn) return builtIn;
   if (!product?.photoPath) return builtIn;
   if (/^(?:https?:)?\/\//i.test(product.photoPath) || product.photoPath.startsWith('/') || product.photoPath.startsWith('assets/')) return product.photoPath;
   if (!supabase) return builtIn;
@@ -294,14 +302,22 @@ function updateRobots(target) {
 }
 
 function setupPremium3DEnhancement() {
-  const host = document.querySelector('[data-icefresh-3d]');
-  if (!host) return;
-  const start = () => import('/premium-3d-bootstrap.js')
-    .then(module => module.bootstrapPremium3D(host))
-    .catch(() => {
-      host.dataset.enhancement = 'fallback';
-      host.dataset.fallbackReason = 'bootstrap-load-failed';
-    });
+  const start = () => {
+    const hosts = [...document.querySelectorAll('[data-icefresh-3d]')]
+      .filter(host => !premium3DHosts.has(host));
+    if (!hosts.length) return;
+    hosts.forEach(host => premium3DHosts.add(host));
+    premium3DBootstrapPromise ||= import('/premium-3d-bootstrap.js');
+    premium3DBootstrapPromise
+      .then(module => hosts.forEach(host => module.bootstrapPremium3D(host)))
+      .catch(() => {
+        premium3DBootstrapPromise = null;
+        hosts.forEach(host => {
+          host.dataset.enhancement = 'fallback';
+          host.dataset.fallbackReason = 'bootstrap-load-failed';
+        });
+      });
+  };
   if ('requestIdleCallback' in window) window.requestIdleCallback(start, { timeout: 1800 });
   else setTimeout(start, 600);
 }
@@ -499,13 +515,14 @@ function renderPublicCatalogue() {
   grid.innerHTML = products.map((product, index) => {
     const photo = productPhotoUrl(product);
     const visual = photo
-      ? `<img class="public-product-photo ${isPackagedProduct(product) ? 'product-photo--pack' : 'product-photo--scene'}" src="${C.esc(photo)}" alt="${C.esc(product.name)}" loading="lazy" decoding="async">`
+      ? `<div class="product-media ${isHorecaProduct(product) ? 'product-media--horeca' : ''}"><img class="public-product-photo ${isPackagedProduct(product) ? 'product-photo--pack' : 'product-photo--scene'}" src="${C.esc(photo)}" alt="${C.esc(product.name)}" width="1254" height="1254" loading="lazy" decoding="async">${isHorecaProduct(product) ? '<div class="horeca-3d-layer" data-icefresh-3d data-icefresh-3d-variant="horeca" data-enhancement="pending" aria-hidden="true"></div>' : ''}</div>`
       : `<div class="product-art ice-product-art"><span>❄</span><strong>${C.esc(product.weight || 'IceFresh')}</strong></div>`;
     return `<article class="catalog-card ${index === 0 ? 'featured' : ''}"><span class="catalog-label">${index === 0 ? 'Популярный выбор' : 'IceFresh'}</span>${visual}<h3>${C.esc(product.name)}</h3><div class="catalog-price"><b>${C.esc(product.weight || product.unit)}</b><strong>${C.money(product.price)}</strong></div><p>${C.esc(product.description || 'Чистый лёд IceFresh в удобной упаковке.')}</p><button type="button" data-product="${C.esc(product.id)}">Выбрать</button></article>`;
   }).join('');
   const previous = select.value;
   select.innerHTML = products.map(product => `<option value="${C.esc(product.id)}">${C.esc(product.name)}</option>`).join('');
   if (products.some(product => product.id === previous)) select.value = previous;
+  setupPremium3DEnhancement();
 }
 
 async function enter(nextSession, force = false) {

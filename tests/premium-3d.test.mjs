@@ -20,7 +20,7 @@ const capableEnvironment = (overrides = {}) => ({
   viewportWidth: 1024,
   ...overrides,
 });
-const fakeHost = () => ({ dataset: { enhancement: 'pending' } });
+const fakeHost = (variant = 'hero') => ({ dataset: { enhancement: 'pending', icefresh3dVariant: variant } });
 const observerHarness = () => {
   let callback;
   let observed = false;
@@ -38,14 +38,29 @@ test('1. WebGL available mounts the enhancement after intersection', async () =>
   const host = fakeHost();
   const observer = observerHarness();
   let mounted = 0;
+  let mountedVariant = '';
   const controller = bootstrapPremium3D(host, {
     environment: capableEnvironment(), probe: () => true, observerFactory: observer.factory,
-    moduleLoader: async () => ({ mountPremiumIceScene: () => { mounted += 1; return { destroy() {} }; } }),
+    moduleLoader: async () => ({ mountPremiumIceScene: (_host, options) => { mounted += 1; mountedVariant = options.variant; return { destroy() {} }; } }),
   });
   assert.equal(observer.observed, true);
   observer.intersect(true);
   assert.equal((await controller.ready).status, 'active');
   assert.equal(mounted, 1);
+  assert.equal(mountedVariant, 'hero');
+});
+
+test('1b. HoReCa hosts mount the stronger falling-ice scene variant', async () => {
+  const host = fakeHost('horeca');
+  const observer = observerHarness();
+  let mountedVariant = '';
+  const controller = bootstrapPremium3D(host, {
+    environment: capableEnvironment(), probe: () => true, observerFactory: observer.factory,
+    moduleLoader: async () => ({ mountPremiumIceScene: (_host, options) => { mountedVariant = options.variant; return { destroy() {} }; } }),
+  });
+  observer.intersect(true);
+  assert.equal((await controller.ready).status, 'active');
+  assert.equal(mountedVariant, 'horeca');
 });
 test('2. WebGL unavailable leaves the static fallback', async () => {
   const host = fakeHost();
@@ -136,7 +151,7 @@ test('15. keyboard navigation remains native and canvas is decorative', () => {
 
 test('16. screen-reader semantic content exists without canvas', () => {
   assert.match(html, /<h1>Чистый лёд/);
-  assert.match(html, /alt="Два стакана IceFresh с пищевым льдом"/);
+  assert.match(html, /alt="Термопакет IceFresh с пищевым льдом 2 кг"/);
   assert.match(html, /<section class="public-section" id="products">/);
 });
 
@@ -171,5 +186,24 @@ test('21. product-safe composition masks 3D away from cups and keeps facets rest
   assert.match(css, /mask-image:radial-gradient\(ellipse 46% 54% at 50% 48%,transparent 0 62%,#000 86%\)/);
   assert.match(css, /hero-3d-layer\[data-enhancement="active"\]\{opacity:\.42\}/);
   for (const scale of ['0.20', '0.18', '0.16']) assert.match(sceneSource, new RegExp(`scale = ${scale.replace('.', '\\.')}`));
-  assert.match(sceneSource, /clamp\(alpha, 0\.03, 0\.28\)/);
+  assert.match(sceneSource, /clamp\(alpha, 0\.018, uMist > 0\.5 \? 0\.09 : 0\.28\)/);
+});
+
+test('22. Hero and HoReCa both declare decorative non-interactive 3D hosts', () => {
+  assert.match(html, /data-icefresh-3d-variant="hero"/);
+  assert.match(app, /data-icefresh-3d-variant="horeca"/);
+  assert.match(css, /\.horeca-3d-layer\{[^}]*pointer-events:none/);
+  assert.match(sceneSource, /uVariant/);
+  assert.match(sceneSource, /falling/);
+});
+
+test('23. known products cannot be replaced by remote public photo paths', () => {
+  assert.match(app, /if \(builtIn\) return builtIn/);
+});
+
+test('24. social metadata and favicon point to real bundled assets', async () => {
+  const layout = await readFile(new URL('../app/layout.tsx', import.meta.url), 'utf8');
+  assert.match(layout, /icefresh-social\.jpg/);
+  assert.doesNotMatch(layout, /icefresh-social\.png/);
+  assert.match(html, /rel="icon" href="\/favicon\.svg"/);
 });
