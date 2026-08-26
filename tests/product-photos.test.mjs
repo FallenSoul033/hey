@@ -38,8 +38,19 @@ test('approved masters are authoritative and packaged products use contain crop'
   assert.match(css, /product-photo--scene\{object-fit:cover/);
 });
 
+test('public catalogue uses bounded display derivatives while master mapping stays authoritative', async () => {
+  const app = await read('public/app.js');
+  assert.match(app, /BUILT_IN_PRODUCT_DISPLAY_PHOTOS/);
+  assert.match(app, /product-01-640\.webp/);
+  assert.match(app, /product-02-640\.webp/);
+  assert.match(app, /hero-bag-2kg-640\.webp/);
+  assert.match(app, /product-04-640\.webp/);
+  assert.match(app, /builtInProductDisplayPhoto\(product\) \|\| productPhotoUrl\(product\)/);
+  assert.match(app, /const BUILT_IN_PRODUCT_PHOTOS = \{[\s\S]*IceFresh_04_HoReCa_5кг_MASTER\.png/);
+});
+
 test('service worker cache revision is bumped for the new storefront assets', async () => {
   const sw = await read('public/sw.js');
-  assert.match(sw, /icefresh-rc1-6-v5/);
+  assert.match(sw, /icefresh-rc1-6-v6/);
   assert.match(sw, /pathname\.startsWith\('\/premium-3d'\)/);
 });

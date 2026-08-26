@@ -1,21 +1,70 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile, stat } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 
 const root = new URL('../', import.meta.url);
 const read = path => readFile(new URL(path, root), 'utf8');
 const bytes = async path => (await stat(new URL(path, root))).size;
 
-test('public shell preloads the approved 2kg hero and removes base64 logo payload', async () => {
+test('public shell responsively preloads the approved 2kg hero derivatives and removes base64 logo payload', async () => {
   const [html, app] = await Promise.all([read('public/app-shell.html'), read('public/app.js')]);
-  assert.match(html, /IceFresh_03_Лед_в_термопакете_2кг_MASTER\.png/);
-  assert.doesNotMatch(html, /hero-icefresh(?:-mobile)?\.webp/);
-  assert.match(html, /fetchpriority="high"/);
+  const hero = html.match(/<figure class="hero-visual">[\s\S]*?<\/figure>/)?.[0] || '';
+  const head = html.match(/<head>[\s\S]*?<\/head>/)?.[0] || '';
+  assert.doesNotMatch(hero, /IceFresh_03_Лед_в_термопакете_2кг_MASTER\.png/);
+  assert.doesNotMatch(head, /IceFresh_03_Лед_в_термопакете_2кг_MASTER\.png/);
+  assert.match(head, /rel="preload" as="image" href="\/assets\/products-approved\/web\/hero-bag-2kg-640\.avif" type="image\/avif" media="\(max-width: 767px\)" fetchpriority="high"/);
+  assert.match(head, /rel="preload" as="image" href="\/assets\/products-approved\/web\/hero-bag-2kg-1200\.avif" type="image\/avif" media="\(min-width: 768px\)" fetchpriority="high"/);
+  assert.match(hero, /<picture>[\s\S]*type="image\/avif" media="\(max-width: 767px\)" srcset="\/assets\/products-approved\/web\/hero-bag-2kg-640\.avif 640w" sizes="100vw"/);
+  assert.match(hero, /type="image\/avif" media="\(min-width: 768px\)" srcset="\/assets\/products-approved\/web\/hero-bag-2kg-1200\.avif 1200w" sizes="50vw"/);
+  assert.match(hero, /type="image\/webp" media="\(max-width: 767px\)" srcset="\/assets\/products-approved\/web\/hero-bag-2kg-640\.webp 640w" sizes="100vw"/);
+  assert.match(hero, /type="image\/webp" media="\(min-width: 768px\)" srcset="\/assets\/products-approved\/web\/hero-bag-2kg-1200\.webp 1200w" sizes="50vw"/);
+  assert.match(hero, /src="\/assets\/products-approved\/web\/hero-bag-2kg-1200\.webp"/);
+  assert.equal((hero.match(/fetchpriority="high"/g) || []).length, 1);
   assert.match(html, /src="\/assets\/logo\.webp"/);
   assert.doesNotMatch(html, /logo-data\.js/);
   assert.doesNotMatch(app, /window\.ICEFRESH_LOGO/);
   assert.ok(await bytes('public/assets/logo.webp') < 40_000);
   assert.ok(await bytes('public/icefresh-social.jpg') < 100_000);
+});
+
+test('approved 2kg MASTER stays immutable while responsive hero derivatives meet transfer budgets', async () => {
+  const masterPath = 'public/assets/products-approved/IceFresh_03_Лед_в_термопакете_2кг_MASTER.png';
+  const master = await readFile(new URL(masterPath, root));
+  assert.equal(master.length, 2_685_579);
+  assert.equal(createHash('sha256').update(master).digest('hex'), '311f3e683cda28c114e1878e80c4e4a552cf2f0e68f4bc22e84d49289bce5429');
+
+  const derivatives = [
+    ['public/assets/products-approved/web/hero-bag-2kg-640.avif', 150_000],
+    ['public/assets/products-approved/web/hero-bag-2kg-640.webp', 150_000],
+    ['public/assets/products-approved/web/hero-bag-2kg-1200.avif', 300_000],
+    ['public/assets/products-approved/web/hero-bag-2kg-1200.webp', 300_000],
+  ];
+  for (const [path, budget] of derivatives) {
+    const size = await bytes(path);
+    assert.ok(size > 10_000, `${path} should contain a real derivative`);
+    assert.ok(size <= budget, `${path} exceeds ${budget}-byte budget: ${size}`);
+  }
+});
+
+test('catalogue and gallery display derivatives prevent MASTER downloads on the public route', async () => {
+  const [html, app] = await Promise.all([read('public/app-shell.html'), read('public/app.js')]);
+  const publicImageMarkup = [...html.matchAll(/<img\b[^>]*>/g)].map(match => match[0]).join('\n');
+  assert.doesNotMatch(publicImageMarkup, /_MASTER\.png/);
+  assert.match(html, /product-01-640\.webp/);
+  assert.match(html, /product-02-640\.webp/);
+  assert.match(html, /product-04-640\.webp/);
+  assert.match(app, /BUILT_IN_PRODUCT_DISPLAY_PHOTOS/);
+
+  const derivatives = [
+    'public/assets/products-approved/web/product-01-640.webp',
+    'public/assets/products-approved/web/product-01-1200.webp',
+    'public/assets/products-approved/web/product-02-640.webp',
+    'public/assets/products-approved/web/product-02-1200.webp',
+    'public/assets/products-approved/web/product-04-640.webp',
+    'public/assets/products-approved/web/product-04-1200.webp',
+  ];
+  for (const path of derivatives) assert.ok(await bytes(path) <= 300_000, `${path} exceeds display budget`);
 });
 
 test('PWA install budget stays small and product imagery is runtime cached', async () => {

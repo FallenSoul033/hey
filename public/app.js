@@ -10,6 +10,12 @@ const BUILT_IN_PRODUCT_PHOTOS = {
   bag2: '/assets/products-approved/IceFresh_03_Лед_в_термопакете_2кг_MASTER.png',
   '35e74838-68cb-4fb7-9e93-7e30675c48d8': '/assets/products-approved/IceFresh_04_HoReCa_5кг_MASTER.png'
 };
+const BUILT_IN_PRODUCT_DISPLAY_PHOTOS = {
+  cup250: '/assets/products-approved/web/product-01-640.webp',
+  bag1: '/assets/products-approved/web/product-02-640.webp',
+  bag2: '/assets/products-approved/web/hero-bag-2kg-640.webp',
+  '35e74838-68cb-4fb7-9e93-7e30675c48d8': '/assets/products-approved/web/product-04-640.webp'
+};
 const premium3DHosts = new WeakSet();
 let premium3DBootstrapPromise = null;
 const PRODUCT_IMAGE_TYPES = new Map([
@@ -268,6 +274,14 @@ function builtInProductPhoto(product) {
   return '';
 }
 
+function builtInProductDisplayPhoto(product) {
+  const direct = BUILT_IN_PRODUCT_DISPLAY_PHOTOS[product?.id];
+  if (direct) return direct;
+  const label = `${product?.name || ''} ${product?.weight || ''}`;
+  if (/HoReCa|5\s*кг/i.test(label)) return BUILT_IN_PRODUCT_DISPLAY_PHOTOS['35e74838-68cb-4fb7-9e93-7e30675c48d8'];
+  return '';
+}
+
 function isPackagedProduct(product) {
   return ['cup250', 'bag1', 'bag2'].includes(product?.id);
 }
@@ -513,9 +527,9 @@ function renderPublicCatalogue() {
   if (!grid || !select) return;
   $('#public-product-count').textContent = String(products.length);
   grid.innerHTML = products.map((product, index) => {
-    const photo = productPhotoUrl(product);
+    const photo = builtInProductDisplayPhoto(product) || productPhotoUrl(product);
     const visual = photo
-      ? `<div class="product-media ${isHorecaProduct(product) ? 'product-media--horeca' : ''}"><img class="public-product-photo ${isPackagedProduct(product) ? 'product-photo--pack' : 'product-photo--scene'}" src="${C.esc(photo)}" alt="${C.esc(product.name)}" width="1254" height="1254" loading="lazy" decoding="async">${isHorecaProduct(product) ? '<div class="horeca-3d-layer" data-icefresh-3d data-icefresh-3d-variant="horeca" data-enhancement="pending" aria-hidden="true"></div>' : ''}</div>`
+      ? `<div class="product-media ${isHorecaProduct(product) ? 'product-media--horeca' : ''}"><img class="public-product-photo ${isPackagedProduct(product) ? 'product-photo--pack' : 'product-photo--scene'}" src="${C.esc(photo)}" alt="${C.esc(product.name)}" width="640" height="640" loading="lazy" decoding="async">${isHorecaProduct(product) ? '<div class="horeca-3d-layer" data-icefresh-3d data-icefresh-3d-variant="horeca" data-enhancement="pending" aria-hidden="true"></div>' : ''}</div>`
       : `<div class="product-art ice-product-art"><span>❄</span><strong>${C.esc(product.weight || 'IceFresh')}</strong></div>`;
     return `<article class="catalog-card ${index === 0 ? 'featured' : ''}"><span class="catalog-label">${index === 0 ? 'Популярный выбор' : 'IceFresh'}</span>${visual}<h3>${C.esc(product.name)}</h3><div class="catalog-price"><b>${C.esc(product.weight || product.unit)}</b><strong>${C.money(product.price)}</strong></div><p>${C.esc(product.description || 'Чистый лёд IceFresh в удобной упаковке.')}</p><button type="button" data-product="${C.esc(product.id)}">Выбрать</button></article>`;
   }).join('');
