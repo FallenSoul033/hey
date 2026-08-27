@@ -1,0 +1,77 @@
+name: Install IceFresh marketing skills
+
+on:
+  push:
+    paths:
+      - '.github/workflows/install-icefresh-marketing-skills.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout IceFresh repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install selected marketing skills one by one
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "icefresh-marketing-installer"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git clone --quiet https://github.com/FallenSoul033/marketingskills.git /tmp/marketingskills
+          git -C /tmp/marketingskills checkout --quiet 3df87f97621e18fbed7f6aa684edba54f49779a7
+
+          skills=(
+            product-marketing
+            marketing-plan
+            customer-research
+            competitor-profiling
+            content-strategy
+            social
+            copywriting
+            copy-editing
+            image
+            video
+            analytics
+            seo-audit
+            ai-seo
+            ads
+            ad-creative
+          )
+
+          for skill in "${skills[@]}"; do
+            src="/tmp/marketingskills/skills/$skill"
+            dst=".codex/skills/$skill"
+
+            if [[ ! -f "$src/SKILL.md" ]]; then
+              echo "Missing source skill: $skill" >&2
+              exit 1
+            fi
+
+            rm -rf "$dst"
+            mkdir -p "$dst"
+            cp -a "$src/." "$dst/"
+            git add -A "$dst"
+
+            if ! git diff --cached --quiet; then
+              git commit -m "Install marketing skill: $skill"
+              git push origin "HEAD:${GITHUB_REF_NAME}"
+            fi
+          done
+
+      - name: Remove temporary installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "icefresh-marketing-installer"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/install-icefresh-marketing-skills.yml
+          git commit -m "Remove temporary marketing skill installer"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
