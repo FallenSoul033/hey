@@ -73,7 +73,7 @@ export function bootstrapPremium3D(host, options = {}) {
       if (destroyed) return;
       scene = rendererModule.mountPremiumIceScene(host, {
         mobile: environment.viewportWidth < 768,
-        variant: host.dataset.icefresh3dVariant || 'hero',
+        variant: host.dataset['icefresh-3dVariant'] || 'hero',
       });
       finish('active');
     } catch {

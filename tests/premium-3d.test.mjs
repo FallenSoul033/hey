@@ -20,7 +20,7 @@ const capableEnvironment = (overrides = {}) => ({
   viewportWidth: 1024,
   ...overrides,
 });
-const fakeHost = (variant = 'hero') => ({ dataset: { enhancement: 'pending', icefresh3dVariant: variant } });
+const fakeHost = (variant = 'hero') => ({ dataset: { enhancement: 'pending', 'icefresh-3dVariant': variant } });
 const observerHarness = () => {
   let callback;
   let observed = false;
