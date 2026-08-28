@@ -29,12 +29,10 @@ export function normalizePlatform(value) {
 
 export function safeSocialHref(value, platformValue = '') {
   const url = String(value || '').trim();
-  const platform = normalizePlatform(platformValue);
-  if (platform === 'email') return /^mailto:[^@\s]+@[^@\s]+\.[^@\s]+$/i.test(url) ? url : '';
-  if (platform === 'phone') return /^tel:\+?[0-9 ()-]{6,30}$/i.test(url) ? url : '';
+  void platformValue;
   try {
     const parsed = new URL(url);
-    return parsed.protocol === 'https:' ? parsed.href : '';
+    return parsed.protocol === 'https:' && parsed.hostname.includes('.') ? parsed.href : '';
   } catch {
     return '';
   }

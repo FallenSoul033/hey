@@ -18,9 +18,11 @@ test('current social platforms accept only HTTPS URLs', () => {
   assert.equal(validateSocialLinkInput({ platform: 'instagram', url: '', label: 'Instagram', enabled: true }).valid, false);
 });
 
-test('future email and phone entries use narrowly validated URI schemes', () => {
-  assert.equal(validateSocialLinkInput({ platform: 'email', url: 'mailto:hello@icefresh.kz', label: 'Email', enabled: true }).valid, true);
-  assert.equal(validateSocialLinkInput({ platform: 'phone', url: 'tel:+77000000000', label: 'Телефон', enabled: true }).valid, true);
+test('non-HTTPS and non-public-host URLs are rejected for every platform', () => {
+  assert.equal(validateSocialLinkInput({ platform: 'email', url: 'mailto:hello@icefresh.kz', label: 'Email', enabled: true }).valid, false);
+  assert.equal(validateSocialLinkInput({ platform: 'phone', url: 'tel:+77000000000', label: 'Телефон', enabled: true }).valid, false);
+  assert.equal(validateSocialLinkInput({ platform: 'custom', url: 'data:text/html,unsafe', label: 'Custom', enabled: true }).valid, false);
+  assert.equal(validateSocialLinkInput({ platform: 'custom', url: 'https://localhost/internal', label: 'Custom', enabled: true }).valid, false);
   assert.equal(safeSocialHref('javascript:alert(1)', 'custom'), '');
 });
 

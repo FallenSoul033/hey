@@ -1425,7 +1425,7 @@ function openSocialLinkForm(link = null, presetPlatform = '') {
   const sortOrder = link?.sortOrder ?? preset?.sortOrder ?? (Math.max(0, ...data.socialLinks.map(item => item.sortOrder)) + 10);
   editingRecord = link ? { type: 'social-links', id: link.id } : null;
   $('#modal-title').textContent = link ? 'Изменить контакт' : 'Добавить контакт';
-  $('#fields').innerHTML = `<div class="form-row"><label>Платформа<input name="platform" value="${C.esc(platform)}" pattern="[a-z0-9][a-z0-9_-]{0,39}" maxlength="40" ${link ? 'readonly' : 'required'} placeholder="instagram"></label><label>Порядок<input name="sortOrder" type="number" min="0" max="100000" step="1" value="${sortOrder}" required></label></div><label>Название для сайта<input name="label" value="${C.esc(label)}" minlength="1" maxlength="80" required placeholder="Например, Instagram"></label><label>URL<input name="url" type="text" inputmode="url" value="${C.esc(link?.url || '')}" maxlength="2048" placeholder="https://…"><small>Для социальных сетей и 2GIS используйте HTTPS. Для будущих email/телефона поддерживаются mailto: и tel:.</small></label><div class="form-checks"><label class="check"><input name="enabled" type="checkbox" ${link?.enabled ? 'checked' : ''}> Показывать на странице «Контакты»</label></div>`;
+  $('#fields').innerHTML = `<div class="form-row"><label>Платформа<input name="platform" value="${C.esc(platform)}" pattern="[a-z0-9][a-z0-9_-]{0,39}" maxlength="40" ${link ? 'readonly' : 'required'} placeholder="instagram"></label><label>Порядок<input name="sortOrder" type="number" min="0" max="100000" step="1" value="${sortOrder}" required></label></div><label>Название для сайта<input name="label" value="${C.esc(label)}" minlength="1" maxlength="80" required placeholder="Например, Instagram"></label><label>URL<input name="url" type="text" inputmode="url" value="${C.esc(link?.url || '')}" maxlength="2048" placeholder="https://…"><small>Используйте только безопасный HTTPS URL.</small></label><div class="form-checks"><label class="check"><input name="enabled" type="checkbox" ${link?.enabled ? 'checked' : ''}> Показывать на странице «Контакты»</label></div>`;
   $('#modal').showModal();
 }
 
@@ -1547,7 +1547,7 @@ async function saveSocialLink(form) {
     enabled: form.elements.enabled.checked
   });
   if (!validation.valid) {
-    if (validation.reason === 'url') throw new Error('Укажите безопасный URL: HTTPS, либо mailto:/tel: для соответствующей платформы.');
+    if (validation.reason === 'url') throw new Error('Укажите безопасный HTTPS URL.');
     if (validation.reason === 'platform') throw new Error('Платформа должна быть коротким идентификатором: латиница, цифры, дефис или подчёркивание.');
     throw new Error('Проверьте название контакта.');
   }

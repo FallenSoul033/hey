@@ -19,9 +19,7 @@ create table public.social_links (
   constraint social_links_enabled_url_check check (not enabled or url <> ''),
   constraint social_links_url_check check (
     url = ''
-    or (platform = 'email' and url ~* '^mailto:[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$')
-    or (platform = 'phone' and url ~* '^tel:\+?[0-9 ()-]{6,30}$')
-    or (platform not in ('email', 'phone') and url ~* '^https://[^[:space:]]+$')
+    or url ~ '^https://([A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}(?::[0-9]{1,5})?(?:/[^[:space:]]*)?$'
   ),
   constraint social_links_org_platform_unique unique (organization_id, platform)
 );
@@ -46,16 +44,10 @@ create policy social_links_public_select
   to anon
   using (enabled and url <> '');
 
-create policy social_links_authenticated_select
+create policy social_links_org_select
   on public.social_links for select
   to authenticated
-  using (
-    (enabled and url <> '')
-    or (
-      organization_id = (select private.current_org_id())
-      and (select private.is_manager())
-    )
-  );
+  using (organization_id = (select private.current_org_id()));
 
 create policy social_links_manager_insert
   on public.social_links for insert

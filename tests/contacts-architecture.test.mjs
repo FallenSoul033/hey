@@ -29,6 +29,8 @@ test('migration explicitly grants public read and manager-only writes under RLS'
   assert.match(migration, /alter table public\.social_links enable row level security/i);
   assert.match(migration, /for select\s+to anon/i);
   assert.match(migration, /enabled and url <> ''/i);
+  assert.match(migration, /create policy social_links_org_select[\s\S]*organization_id = \(select private\.current_org_id\(\)\)/i);
+  assert.doesNotMatch(migration, /create policy social_links_authenticated_select/i);
   assert.match(migration, /private\.is_manager\(\)/i);
   assert.match(migration, /for update\s+to authenticated/i);
   assert.match(migration, /with check/i);
@@ -41,7 +43,15 @@ test('migration explicitly grants public read and manager-only writes under RLS'
 test('database rejects unsafe or empty enabled links', () => {
   assert.match(migration, /social_links_url_check/i);
   assert.match(migration, /https:\/\//i);
+  assert.doesNotMatch(migration, /mailto:|tel:/i);
   assert.match(migration, /not enabled or url <> ''/i);
+});
+
+test('column grants hide sensitive ownership fields from anon and prevent organization reassignment', () => {
+  assert.match(migration, /grant select \(id, platform, url, label, enabled, sort_order\)[\s\S]*to anon/i);
+  assert.doesNotMatch(migration, /grant select \([^)]*(?:organization_id|created_by)[^)]*\)[\s\S]*to anon/i);
+  assert.match(migration, /grant update \(platform, url, label, enabled, sort_order\)[\s\S]*to authenticated/i);
+  assert.doesNotMatch(migration, /grant update \([^)]*organization_id[^)]*\)/i);
 });
 
 test('public contacts use a same-origin compatibility endpoint while the migration is pending', () => {
