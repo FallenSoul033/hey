@@ -9,7 +9,7 @@ interface PublicSupabaseConfig {
   key: string;
 }
 
-const PUBLIC_FIELDS = "id,platform,url,label,enabled,sort_order";
+const PUBLIC_FIELDS = "platform,url,label,sort_order";
 const MISSING_RELATION_CODES = new Set(["42P01", "PGRST205"]);
 
 function json(body: unknown, status = 200): Response {

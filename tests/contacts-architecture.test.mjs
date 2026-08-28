@@ -48,7 +48,8 @@ test('database rejects unsafe or empty enabled links', () => {
 });
 
 test('column grants hide sensitive ownership fields from anon and prevent organization reassignment', () => {
-  assert.match(migration, /grant select \(id, platform, url, label, enabled, sort_order\)[\s\S]*to anon/i);
+  assert.match(migration, /grant select \(platform, url, label, sort_order\)[\s\S]*to anon/i);
+  assert.doesNotMatch(migration, /grant select \([^)]*(?:\bid\b|\benabled\b)[^)]*\)[\s\S]*to anon/i);
   assert.doesNotMatch(migration, /grant select \([^)]*(?:organization_id|created_by)[^)]*\)[\s\S]*to anon/i);
   assert.match(migration, /grant update \(platform, url, label, enabled, sort_order\)[\s\S]*to authenticated/i);
   assert.doesNotMatch(migration, /grant update \([^)]*organization_id[^)]*\)/i);
@@ -59,6 +60,7 @@ test('public contacts use a same-origin compatibility endpoint while the migrati
   assert.match(worker, /handlePublicSocialLinks/);
   assert.match(worker, /url\.pathname === "\/api\/public-social-links"/);
   assert.match(proxy, /PGRST205/);
+  assert.match(proxy, /PUBLIC_FIELDS = "platform,url,label,sort_order"/);
   assert.match(proxy, /available:\s*false/);
   assert.match(proxy, /Cache-Control",\s*"no-store"/);
 });

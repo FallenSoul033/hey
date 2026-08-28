@@ -79,7 +79,7 @@ create policy social_links_manager_delete
   );
 
 revoke all privileges on table public.social_links from anon, authenticated;
-grant select (id, platform, url, label, enabled, sort_order)
+grant select (platform, url, label, sort_order)
   on public.social_links to anon;
 grant select (id, organization_id, platform, url, label, enabled, sort_order)
   on public.social_links to authenticated;
