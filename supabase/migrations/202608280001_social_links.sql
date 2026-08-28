@@ -19,13 +19,21 @@ create table public.social_links (
   constraint social_links_enabled_url_check check (not enabled or url <> ''),
   constraint social_links_url_check check (
     url = ''
-    or url ~ '^https://([A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}(?::[0-9]{1,5})?(?:/[^[:space:]]*)?$'
+    or (
+      url ~ '^https://([A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}(?::[0-9]{1,5})?(?:[/?#][^[:space:]]*)?$'
+      and (
+        url !~ '^https://[^/]+:[0-9]{1,5}(?:[/?#]|$)'
+        or substring(url from '^https://[^/]+:([0-9]{1,5})(?:[/?#]|$)')::integer between 1 and 65535
+      )
+    )
   ),
   constraint social_links_org_platform_unique unique (organization_id, platform)
 );
 
 create index social_links_org_order_idx
   on public.social_links(organization_id, sort_order, platform);
+create index social_links_created_by_idx
+  on public.social_links(created_by);
 create index social_links_public_order_idx
   on public.social_links(sort_order, platform)
   where enabled and url <> '';

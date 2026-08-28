@@ -32,7 +32,17 @@ export function safeSocialHref(value, platformValue = '') {
   void platformValue;
   try {
     const parsed = new URL(url);
-    return parsed.protocol === 'https:' && parsed.hostname.includes('.') ? parsed.href : '';
+    const publicHostname = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i.test(parsed.hostname);
+    const port = parsed.port ? Number(parsed.port) : 443;
+    return parsed.protocol === 'https:'
+      && !parsed.username
+      && !parsed.password
+      && publicHostname
+      && Number.isInteger(port)
+      && port >= 1
+      && port <= 65535
+      ? parsed.href
+      : '';
   } catch {
     return '';
   }

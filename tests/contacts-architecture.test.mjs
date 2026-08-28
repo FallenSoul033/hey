@@ -2,11 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const [html, app, routes, migration, worker, proxy] = await Promise.all([
+const [html, app, routes, migration, reconciliation, worker, proxy] = await Promise.all([
   readFile(new URL('../public/app-shell.html', import.meta.url), 'utf8'),
   readFile(new URL('../public/app.js', import.meta.url), 'utf8'),
   readFile(new URL('../public/routes.js', import.meta.url), 'utf8'),
   readFile(new URL('../supabase/migrations/202608280001_social_links.sql', import.meta.url), 'utf8'),
+  readFile(new URL('../supabase/migrations/202608280002_social_links_exact_candidate.sql', import.meta.url), 'utf8'),
   readFile(new URL('../worker/index.ts', import.meta.url), 'utf8'),
   readFile(new URL('../worker/public-social-links.ts', import.meta.url), 'utf8').catch(() => ''),
 ]);
@@ -55,12 +56,22 @@ test('column grants hide sensitive ownership fields from anon and prevent organi
   assert.doesNotMatch(migration, /grant update \([^)]*organization_id[^)]*\)/i);
 });
 
+test('forward migration reconciles the earlier non-prod schema without dropping contact data', () => {
+  assert.match(reconciliation, /rename column display_order to sort_order/i);
+  assert.match(reconciliation, /coalesce\(nullif\(btrim\(label\), ''\), lower\(btrim\(platform\)\)\)/i);
+  assert.doesNotMatch(reconciliation, /drop table|truncate table|delete from public\.social_links/i);
+  assert.match(reconciliation, /revoke select \(%1\$I\), insert \(%1\$I\), update \(%1\$I\), references \(%1\$I\)/i);
+  assert.match(reconciliation, /grant update \(platform, url, label, enabled, sort_order\)/i);
+});
+
 test('public contacts use a same-origin compatibility endpoint while the migration is pending', () => {
   assert.match(app, /fetch\('\/api\/public-social-links'/);
   assert.match(worker, /handlePublicSocialLinks/);
   assert.match(worker, /url\.pathname === "\/api\/public-social-links"/);
   assert.match(proxy, /PGRST205/);
   assert.match(proxy, /PUBLIC_FIELDS = "platform,url,label,sort_order"/);
+  assert.doesNotMatch(proxy, /searchParams\.set\("enabled"/);
+  assert.match(migration, /using \(enabled and url <> ''\)/i);
   assert.match(proxy, /available:\s*false/);
   assert.match(proxy, /Cache-Control",\s*"no-store"/);
 });

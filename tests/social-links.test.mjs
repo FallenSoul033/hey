@@ -23,7 +23,15 @@ test('non-HTTPS and non-public-host URLs are rejected for every platform', () =>
   assert.equal(validateSocialLinkInput({ platform: 'phone', url: 'tel:+77000000000', label: 'Телефон', enabled: true }).valid, false);
   assert.equal(validateSocialLinkInput({ platform: 'custom', url: 'data:text/html,unsafe', label: 'Custom', enabled: true }).valid, false);
   assert.equal(validateSocialLinkInput({ platform: 'custom', url: 'https://localhost/internal', label: 'Custom', enabled: true }).valid, false);
+  assert.equal(validateSocialLinkInput({ platform: 'custom', url: 'https://127.0.0.1/internal', label: 'Custom', enabled: true }).valid, false);
+  assert.equal(validateSocialLinkInput({ platform: 'custom', url: 'https://user:pass@example.com/private', label: 'Custom', enabled: true }).valid, false);
+  assert.equal(validateSocialLinkInput({ platform: 'custom', url: 'https://example.com:99999/private', label: 'Custom', enabled: true }).valid, false);
   assert.equal(safeSocialHref('javascript:alert(1)', 'custom'), '');
+});
+
+test('safe public HTTPS URLs may use paths, queries, fragments, and valid ports', () => {
+  assert.equal(safeSocialHref('https://example.com?from=contacts'), 'https://example.com/?from=contacts');
+  assert.equal(safeSocialHref('https://example.com:8443/path#map'), 'https://example.com:8443/path#map');
 });
 
 test('external HTTPS links are rendered with opener protection', () => {

@@ -65,7 +65,6 @@ export async function handlePublicSocialLinks(request: Request, env: PublicSocia
 
     const endpoint = new URL("/rest/v1/social_links", config.url);
     endpoint.searchParams.set("select", PUBLIC_FIELDS);
-    endpoint.searchParams.set("enabled", "eq.true");
     endpoint.searchParams.set("order", "sort_order.asc,platform.asc");
     const upstream = await fetch(endpoint, {
       method: "GET",
