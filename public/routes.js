@@ -1,5 +1,5 @@
 (function (globalScope) {
-  const PUBLIC_SITE_ROUTES = new Set(['home']);
+  const PUBLIC_SITE_ROUTES = new Set(['home', 'contacts']);
   const AUTH_ROUTES = new Set(['login', 'register']);
   const APP_ROUTES = new Set([
     'dashboard',
@@ -14,10 +14,11 @@
     'warehouse',
     'analytics',
     'operations',
+    'contact-settings',
     'ai',
     'integrations'
   ]);
-  const MANAGER_ROUTES = new Set(['products', 'employees', 'accruals', 'analytics', 'operations']);
+  const MANAGER_ROUTES = new Set(['products', 'employees', 'accruals', 'analytics', 'operations', 'contact-settings']);
   const OWNER_ROUTES = new Set(['integrations']);
 
   function parseHash(hash) {
@@ -37,6 +38,7 @@
       .replace(/\/{2,}/g, '/')
       .replace(/\/$/, '') || '/';
     if (cleanPath === '/' || cleanPath === '/index.html') return 'home';
+    if (cleanPath === '/contacts') return 'contacts';
     if (cleanPath === '/app') return 'dashboard';
     if (cleanPath.startsWith('/app/')) {
       const segment = cleanPath.slice(5).split('/', 1)[0].trim().toLowerCase();
@@ -48,6 +50,7 @@
   function pathFor(route) {
     const requested = String(route || '').trim().toLowerCase();
     if (requested === 'home') return '/';
+    if (requested === 'contacts') return '/contacts';
     if (AUTH_ROUTES.has(requested) || APP_ROUTES.has(requested)) return `/app/${requested}`;
     return '/app/dashboard';
   }

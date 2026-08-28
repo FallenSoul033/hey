@@ -2,6 +2,7 @@
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
 import { handleAiAssistant, type AiAssistantEnv } from "./ai-assistant";
+import { handlePublicSocialLinks } from "./public-social-links";
 
 interface Env extends AiAssistantEnv {
   ASSETS: Fetcher;
@@ -63,7 +64,11 @@ const worker = {
       return secure(await handleAiAssistant(request, env), "no-store");
     }
 
-    if (url.pathname === "/" || url.pathname === "/index.html") {
+    if (url.pathname === "/api/public-social-links") {
+      return secure(await handlePublicSocialLinks(request, env), "no-store");
+    }
+
+    if (url.pathname === "/" || url.pathname === "/index.html" || url.pathname === "/contacts") {
       return applicationShell(request, env, false);
     }
 

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'icefresh-rc1-6-v6';
+const CACHE_NAME = 'icefresh-rc1-6-v7';
 const APP_SHELL = '/';
 // Keep install small: only the shell and control-plane assets are precached.
 // Product/hero/gallery images are cached on first use so mobile users do not
@@ -11,6 +11,9 @@ const PRECACHE = [
   '/core.js',
   '/routes.js',
   '/app.js',
+  '/social-links.js',
+  '/real-photo-360.js',
+  '/product-360-config.js',
   '/config.js',
   '/assets/logo.webp',
   '/manifest.webmanifest',

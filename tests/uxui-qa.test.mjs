@@ -43,7 +43,7 @@ test('public form and actions expose usable states and readable labels', () => {
 
 test('public site remains available when the external Supabase SDK CDN fails', () => {
   assert.match(app, /catch \(error\) \{\s*renderPublicCatalogue\(\);/);
-  assert.match(app, /if \(decision\.screen === 'public'\) \{\s*showOnly\('public'\)/);
+  assert.match(app, /if \(decision\.screen === 'public'\) \{\s*showOnly\('public', decision\.route\)/);
 });
 
 test('registration copy makes invite-only access clear', () => {

@@ -18,10 +18,18 @@ const BUILT_IN_PRODUCT_DISPLAY_PHOTOS = {
 };
 const premium3DHosts = new WeakSet();
 let premium3DBootstrapPromise = null;
+let product360ModulePromise = null;
+let product360Controllers = [];
+let socialTools = null;
 const PRODUCT_IMAGE_TYPES = new Map([
   ['image/jpeg', 'jpg'],
   ['image/png', 'png'],
   ['image/webp', 'webp']
+]);
+const DEFAULT_SOCIAL_LINKS = Object.freeze([
+  { platform: 'instagram', label: 'Instagram', sortOrder: 10 },
+  { platform: 'tiktok', label: 'TikTok', sortOrder: 20 },
+  { platform: '2gis', label: '2GIS', sortOrder: 30 }
 ]);
 const $ = selector => document.querySelector(selector);
 
@@ -42,7 +50,7 @@ function emptyData() {
   return {
     orders: [], clients: [], production: [], employees: [], accruals: [],
     requests: [], products: [], schedule: [], members: [], invites: [],
-    inventoryLedger: [], inventorySummary: [], financialLedger: [], financeSummary: null, productSalesSummary: [], operationEvents: [], notificationEvents: []
+    inventoryLedger: [], inventorySummary: [], financialLedger: [], financeSummary: null, productSalesSummary: [], operationEvents: [], notificationEvents: [], socialLinks: []
   };
 }
 
@@ -65,6 +73,8 @@ let hydratedUserId = null;
 let editingRecord = null;
 let calendarCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 let publicProducts = [];
+let publicSocialLinks = [];
+let socialLinksAvailable = true;
 let data = emptyData();
 let aiMessages = [];
 let aiBusy = false;
@@ -95,6 +105,7 @@ const navAll = [
   ['warehouse', '▦', 'Склад'],
   ['analytics', '↗', 'Аналитика'],
   ['operations', '☷', 'Журнал операций'],
+  ['contact-settings', '◎', 'Контакты/Соцсети'],
   ['ai', '◎', 'AI‑ассистент'],
   ['integrations', '⛓', 'Интеграции']
 ];
@@ -112,6 +123,7 @@ const titles = {
   warehouse: ['Остатки', 'Склад'],
   analytics: ['Показатели', 'Аналитика'],
   operations: ['Контроль', 'Журнал операций и уведомлений'],
+  'contact-settings': ['Настройки сайта', 'Контакты/Соцсети'],
   ai: ['Помощник руководителя', 'AI‑ассистент IceFresh'],
   integrations: ['Настройки владельца', 'Интеграции']
 };
@@ -247,6 +259,17 @@ function normalizeProduct(product) {
   };
 }
 
+function normalizeSocialLink(link) {
+  return {
+    id: link.id,
+    platform: String(link.platform || ''),
+    url: String(link.url || ''),
+    label: String(link.label || ''),
+    enabled: link.enabled === true,
+    sortOrder: Number(link.sort_order || 0)
+  };
+}
+
 function catalogue() {
   return data.products.length ? data.products : C.PRODUCTS.map(normalizeProduct);
 }
@@ -336,8 +359,36 @@ function setupPremium3DEnhancement() {
   else setTimeout(start, 600);
 }
 
-function showOnly(target) {
-  $('#public-site').hidden = target !== 'public';
+function destroyProduct360Enhancements() {
+  product360Controllers.forEach(controller => controller.destroy());
+  product360Controllers = [];
+}
+
+function setupProduct360Enhancements() {
+  const root = $('#public-catalog');
+  if (!root?.querySelector('[data-product-360]')) return;
+  product360ModulePromise ||= import('/real-photo-360.js');
+  product360ModulePromise
+    .then(module => {
+      destroyProduct360Enhancements();
+      product360Controllers = module.mountConfiguredProductViewers(root);
+    })
+    .catch(() => {
+      product360ModulePromise = null;
+      destroyProduct360Enhancements();
+    });
+}
+
+function updatePublicMetadata(publicRoute) {
+  const contacts = publicRoute === 'contacts';
+  document.title = contacts ? 'Контакты IceFresh' : 'IceFresh — чистый лёд для бизнеса и дома';
+  const canonical = document.querySelector('link[rel="canonical"]');
+  if (canonical) canonical.href = contacts ? 'https://icefresh.kz/contacts' : 'https://icefresh.kz/';
+}
+
+function showOnly(target, publicRoute = 'home') {
+  $('#public-site').hidden = target !== 'public' || publicRoute !== 'home';
+  $('#public-contacts').hidden = target !== 'public' || publicRoute !== 'contacts';
   $('#auth-screen').hidden = target !== 'auth';
   $('#onboarding').hidden = target !== 'onboarding';
   document.body.classList.toggle('app-ready', target === 'app');
@@ -345,6 +396,7 @@ function showOnly(target) {
   $('#global-search-results').hidden = true;
   $('#global-search').setAttribute('aria-expanded', 'false');
   updateRobots(target);
+  if (target === 'public') updatePublicMetadata(publicRoute);
 }
 
 function route() {
@@ -410,8 +462,9 @@ function applyRoute() {
     replaceRoute(decision.route);
   }
   if (decision.screen === 'public') {
-    showOnly('public');
-    renderPublicCatalogue();
+    showOnly('public', decision.route);
+    if (decision.route === 'contacts') renderPublicContacts();
+    else renderPublicCatalogue();
     return;
   }
   if (decision.screen === 'auth') {
@@ -453,6 +506,8 @@ async function init() {
   document.querySelectorAll('.public-logo').forEach(element => { element.src = logoUrl; });
   $('#public-order-form [name=started_at]').value = String(Date.now());
   setupPremium3DEnhancement();
+  try { socialTools = await import('/social-links.js'); } catch { socialTools = null; }
+  renderPublicContacts();
   $('#auth-form [name=full_name]').parentElement.hidden = true;
   $('#setup-warning').hidden = true;
   $('#setup-warning').style.display = 'none';
@@ -473,12 +528,12 @@ async function init() {
     supabase = createClient(config.supabaseUrl, config.supabasePublishableKey, {
       auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
     });
-    await loadPublicCatalogue();
+    await Promise.all([loadPublicCatalogue(), loadPublicContacts()]);
     supabase.auth.onAuthStateChange((event, next) => {
       session = next;
       if (!next) {
         resetIdentity();
-        if (route() !== 'home') replaceRoute('login');
+        if (!['home', 'contacts'].includes(route())) replaceRoute('login');
         setTimeout(applyRoute, 0);
         return;
       }
@@ -499,7 +554,8 @@ async function init() {
     renderPublicCatalogue();
     const decision = R.resolve(route(), access());
     if (decision.screen === 'public') {
-      showOnly('public');
+      showOnly('public', decision.route);
+      if (decision.route === 'contacts') renderPublicContacts();
       return;
     }
     showMessage('#auth-message', `Не удалось подключиться: ${friendlyError(error)}`, true);
@@ -520,16 +576,50 @@ async function loadPublicCatalogue() {
   renderPublicCatalogue();
 }
 
+async function loadPublicContacts() {
+  try {
+    const response = await fetch('/api/public-social-links', { cache: 'no-store' });
+    if (!response.ok) throw new Error('public-social-links-unavailable');
+    const result = await response.json();
+    publicSocialLinks = Array.isArray(result.links) ? result.links : [];
+    if (result.available === false) socialLinksAvailable = false;
+    if (result.available === true) socialLinksAvailable = true;
+  } catch {
+    publicSocialLinks = [];
+  }
+  renderPublicContacts();
+}
+
+function renderPublicContacts() {
+  const container = $('#public-contact-links');
+  if (!container) return;
+  const links = socialTools ? publicSocialLinks.map(link => {
+    const href = socialTools.safeSocialHref(link.url, link.platform);
+    return href ? { ...link, href } : null;
+  }).filter(Boolean) : [];
+  if (!links.length) {
+    container.innerHTML = '<p class="contacts-empty">Контакты пока не опубликованы.</p>';
+    return;
+  }
+  container.innerHTML = links.map(link => {
+    const external = link.href.startsWith('https://');
+    const attributes = external ? ' target="_blank" rel="noopener noreferrer external"' : '';
+    return `<a class="contact-link-card" role="listitem" href="${C.esc(link.href)}"${attributes}><span class="contact-link-icon">${socialTools.iconForPlatform(link.platform)}</span><span><strong>${C.esc(link.label)}</strong><small>${C.esc(socialTools.labelForPlatform(link.platform))}</small></span><b>${external ? 'Открыть ↗' : 'Связаться'}</b></a>`;
+  }).join('');
+}
+
 function renderPublicCatalogue() {
   const products = publicProducts.length ? publicProducts : C.PRODUCTS.map(normalizeProduct);
   const grid = $('#public-catalog');
   const select = $('#public-product-select');
   if (!grid || !select) return;
+  destroyProduct360Enhancements();
   $('#public-product-count').textContent = String(products.length);
   grid.innerHTML = products.map((product, index) => {
     const photo = builtInProductDisplayPhoto(product) || productPhotoUrl(product);
+    const viewerAttribute = isPackagedProduct(product) ? ` data-product-360="${C.esc(product.id)}"` : '';
     const visual = photo
-      ? `<div class="product-media ${isHorecaProduct(product) ? 'product-media--horeca' : ''}"><img class="public-product-photo ${isPackagedProduct(product) ? 'product-photo--pack' : 'product-photo--scene'}" src="${C.esc(photo)}" alt="${C.esc(product.name)}" width="640" height="640" loading="lazy" decoding="async">${isHorecaProduct(product) ? '<div class="horeca-3d-layer" data-icefresh-3d data-icefresh-3d-variant="horeca" data-enhancement="pending" aria-hidden="true"></div>' : ''}</div>`
+      ? `<div class="product-media ${isHorecaProduct(product) ? 'product-media--horeca' : ''}"${viewerAttribute}><img class="public-product-photo ${isPackagedProduct(product) ? 'product-photo--pack' : 'product-photo--scene'}" src="${C.esc(photo)}" alt="${C.esc(product.name)}" width="640" height="640" loading="lazy" decoding="async">${isHorecaProduct(product) ? '<div class="horeca-3d-layer" data-icefresh-3d data-icefresh-3d-variant="horeca" data-enhancement="pending" aria-hidden="true"></div>' : ''}</div>`
       : `<div class="product-art ice-product-art"><span>❄</span><strong>${C.esc(product.weight || 'IceFresh')}</strong></div>`;
     return `<article class="catalog-card ${index === 0 ? 'featured' : ''}"><span class="catalog-label">${index === 0 ? 'Популярный выбор' : 'IceFresh'}</span>${visual}<h3>${C.esc(product.name)}</h3><div class="catalog-price"><b>${C.esc(product.weight || product.unit)}</b><strong>${C.money(product.price)}</strong></div><p>${C.esc(product.description || 'Чистый лёд IceFresh в удобной упаковке.')}</p><button type="button" data-product="${C.esc(product.id)}">Выбрать</button></article>`;
   }).join('');
@@ -537,6 +627,7 @@ function renderPublicCatalogue() {
   select.innerHTML = products.map(product => `<option value="${C.esc(product.id)}">${C.esc(product.name)}</option>`).join('');
   if (products.some(product => product.id === previous)) select.value = previous;
   setupPremium3DEnhancement();
+  setupProduct360Enhancements();
 }
 
 async function enter(nextSession, force = false) {
@@ -599,6 +690,9 @@ async function loadAll() {
   const ordersQuery = manager
     ? supabase.from('orders').select('*,order_items(id,product_id,quantity,unit_price)').order('order_date', { ascending: false }).order('created_at', { ascending: false }).limit(400)
     : supabase.rpc('list_orders_operational_rc', { p_limit: 400 });
+  const socialLinksQuery = manager && socialLinksAvailable
+    ? supabase.from('social_links').select('id,organization_id,platform,url,label,enabled,sort_order').eq('organization_id', profile.organization_id).order('sort_order').order('platform')
+    : emptyResult;
   const results = await Promise.all([
     supabase.from('organizations').select('id,name').eq('id', profile.organization_id).single(),
     supabase.from('clients').select('*').order('created_at', { ascending: false }).limit(500),
@@ -617,8 +711,14 @@ async function loadAll() {
     manager ? supabase.rpc('get_finance_summary_rc') : emptyResult,
     manager ? supabase.rpc('get_product_sales_summary_rc') : emptyResult,
     manager ? supabase.from('operation_events').select('id,severity,event_type,entity_type,entity_id,message,details,request_id,occurred_at').order('occurred_at', { ascending: false }).limit(200) : emptyResult,
-    manager ? supabase.from('notification_events').select('id,channel,recipient,event_type,aggregate_type,aggregate_id,status,attempts,next_attempt_at,last_error,created_at,sent_at').order('created_at', { ascending: false }).limit(200) : emptyResult
+    manager ? supabase.from('notification_events').select('id,channel,recipient,event_type,aggregate_type,aggregate_id,status,attempts,next_attempt_at,last_error,created_at,sent_at').order('created_at', { ascending: false }).limit(200) : emptyResult,
+    socialLinksQuery
   ]);
+  const socialLinksResult = results[18];
+  if (socialLinksResult.error && ['42P01', 'PGRST205'].includes(socialLinksResult.error.code)) {
+    socialLinksAvailable = false;
+    results[18] = { data: [], error: null };
+  } else if (!socialLinksResult.error) socialLinksAvailable = true;
   const firstError = results.find(result => result.error)?.error;
   if (firstError) {
     setSync('Ошибка', 'bad');
@@ -649,6 +749,7 @@ async function loadAll() {
   data.productSalesSummary = manager ? (results[15].data || []).map(row => ({ product: row.product_id, total: Number(row.total || 0) })) : [];
   data.operationEvents = manager ? results[16].data.map(row => ({ id: row.id, severity: row.severity, type: row.event_type, entityType: row.entity_type, entityId: row.entity_id, message: row.message, details: row.details || {}, requestId: row.request_id, occurredAt: row.occurred_at })) : [];
   data.notificationEvents = manager ? results[17].data.map(row => ({ id: row.id, channel: row.channel, recipient: row.recipient, type: row.event_type, aggregateType: row.aggregate_type, aggregateId: row.aggregate_id, status: row.status, attempts: row.attempts, nextAttemptAt: row.next_attempt_at, lastError: row.last_error, createdAt: row.created_at, sentAt: row.sent_at })) : [];
+  data.socialLinks = manager ? results[18].data.map(normalizeSocialLink) : [];
 
   document.querySelector('.brand small').textContent = organization.name;
   document.querySelector('.privacy').textContent = `● Онлайн · ${profile.full_name} · ${roleLabels[profile.role] || profile.role}`;
@@ -662,7 +763,7 @@ async function subscribe() {
   realtime = supabase.channel(`icefresh-${profile.organization_id}`);
   const commonTables = ['clients', 'employees', 'production_entries', 'stock_ledger', 'website_requests', 'products', 'schedule_items'];
   const roleTables = manager
-    ? ['orders', 'order_items', 'accruals', 'organization_invites', 'financial_ledger', 'operation_events', 'notification_events']
+    ? ['orders', 'order_items', 'accruals', 'organization_invites', 'financial_ledger', 'operation_events', 'notification_events', ...(socialLinksAvailable ? ['social_links'] : [])]
     : ['order_change_signal'];
   for (const tableName of [...commonTables, ...roleTables]) {
     realtime.on('postgres_changes', { event: '*', schema: 'public', table: tableName, filter: `organization_id=eq.${profile.organization_id}` }, scheduleRefresh);
@@ -707,7 +808,7 @@ function setSidebarOpen(open) {
 function buildNav() {
   const allowed = navAll.filter(item => {
     if (item[0] === 'integrations') return owner;
-    return manager || !['products', 'employees', 'accruals', 'analytics', 'operations'].includes(item[0]);
+    return manager || !['products', 'employees', 'accruals', 'analytics', 'operations', 'contact-settings'].includes(item[0]);
   });
   const newCount = data.requests.filter(request => request.status === 'Новая').length;
   $('#nav').innerHTML = allowed.map(item => `<button data-section="${item[0]}"><span>${item[1]}</span>${item[2]}${item[0] === 'requests' && newCount ? ` <b class="nav-count">${newCount}</b>` : ''}</button>`).join('');
@@ -1063,6 +1164,20 @@ function aiView() {
   return `<div class="ai-layout"><aside class="ai-guide"><div class="ai-badge">${manager ? 'AI для руководителя' : 'AI для сотрудника'}</div><h2>${manager ? 'Быстрый анализ IceFresh' : 'Помощник по работе'}</h2><p>Задавайте вопросы обычными словами. Ассистент не изменяет записи — он только анализирует доступную вам сводку.</p><div class="ai-suggestions">${suggestions.map(question => `<button type="button" data-ai-question="${C.esc(question)}">${C.esc(question)}</button>`).join('')}</div><div class="ai-privacy"><b>Защита данных</b><span>Имена и телефоны не передаются. Сотрудникам недоступны начисления и финансовая аналитика руководства.</span></div></aside><section class="ai-chat"><div class="ai-chat-head"><div><span class="ai-online"></span><b>IceFresh AI</b><small>${manager ? 'Помощник по управленческому учёту' : 'Помощник по текущей работе'}</small></div>${aiMessages.length ? '<button type="button" class="link" data-ai-reset>Очистить диалог</button>' : ''}</div><div class="ai-chat-log" aria-live="polite">${messages}${aiBusy ? '<article class="ai-message assistant loading"><div>AI</div><p><i></i><i></i><i></i></p></article>' : ''}</div>${aiError ? `<p class="ai-error" role="alert">${C.esc(aiError)}</p>` : ''}<form id="ai-form" class="ai-form"><label for="ai-question">Ваш вопрос</label><textarea id="ai-question" name="question" rows="3" minlength="2" maxlength="1800" required ${aiBusy ? 'disabled' : ''} placeholder="Например: какие остатки требуют внимания?"></textarea><button class="primary" type="submit" ${aiBusy ? 'disabled' : ''}>${aiBusy ? 'Анализирую…' : 'Спросить AI'}</button></form><p class="ai-disclaimer">AI может ошибаться. Проверяйте важные решения по исходным записям CRM.</p></section></div>`;
 }
 
+function contactsSettingsView() {
+  if (!manager) return empty('Раздел доступен владельцу и администраторам IceFresh.');
+  if (!socialLinksAvailable) {
+    return `<div class="social-settings-notice"><span>!</span><div><p class="eyebrow">Требуется миграция</p><h2>Хранилище контактов ещё не подключено</h2><p>Интерфейс готов, но таблица social_links отсутствует в текущей базе. Production-база не изменялась.</p></div></div>`;
+  }
+  const missing = DEFAULT_SOCIAL_LINKS.filter(preset => !data.socialLinks.some(link => link.platform === preset.platform));
+  const rows = data.socialLinks.map(link => {
+    const safe = socialTools?.safeSocialHref(link.url, link.platform) || '';
+    return `<article class="social-setting-card"><span class="social-setting-icon">${socialTools?.iconForPlatform(link.platform) || '↗'}</span><div class="social-setting-copy"><p class="eyebrow">${C.esc(socialTools?.labelForPlatform(link.platform) || link.platform)}</p><h3>${C.esc(link.label)}</h3><code>${safe ? C.esc(safe) : 'URL не задан'}</code></div><span class="social-setting-state ${link.enabled ? 'enabled' : ''}">${link.enabled ? 'Опубликовано' : 'Скрыто'}</span><div class="social-setting-actions"><button type="button" class="ghost" data-edit-social-link="${C.esc(link.id)}">Изменить</button><button type="button" class="ghost" data-toggle-social-link="${C.esc(link.id)}">${link.enabled ? 'Выключить' : 'Включить'}</button><button type="button" class="link danger" data-delete-social-link="${C.esc(link.id)}">Удалить</button></div></article>`;
+  });
+  const presets = missing.map(preset => `<article class="social-setting-card preset"><span class="social-setting-icon">${socialTools?.iconForPlatform(preset.platform) || '↗'}</span><div class="social-setting-copy"><p class="eyebrow">Быстрая настройка</p><h3>${C.esc(preset.label)}</h3><code>Ссылка не добавлена</code></div><button type="button" class="primary" data-add-social-link="${C.esc(preset.platform)}">Добавить</button></article>`);
+  return `<div class="social-settings-head"><div><p class="eyebrow">Публичная страница /contacts</p><h2>Контакты и социальные сети</h2><p>Сайт показывает только включённые записи с корректным URL. Изменение начинает действовать из базы данных без правки frontend-кода.</p></div><button type="button" class="primary" data-add-social-link>＋ Добавить ссылку</button></div><div class="social-settings-list">${[...rows, ...presets].join('') || '<p class="empty">Добавьте первую ссылку.</p>'}</div>`;
+}
+
 function integrationsView() {
   if (!owner) return empty('Раздел доступен только владельцу IceFresh.');
   return `<div class="integration-status"><div><span class="integration-logo">◎</span><div><p class="eyebrow">AI Provider Gateway</p><h2>AI-провайдеры подключаются через единый серверный слой</h2><p>По умолчанию используется OpenAI. Архитектура RC поддерживает OpenAI, Anthropic/Claude, Google Gemini и HTTPS OpenAI-compatible endpoint через серверные секреты.</p></div></div><span class="integration-online"><i></i> RC готов</span></div><div class="integration-grid"><section class="integration-panel"><div class="panel-head"><div><p class="eyebrow">Параметры</p><h2>Паспорт подключения</h2></div><button type="button" class="ghost" data-copy-integration="safe-config">Копировать всё</button></div><div class="integration-fields">${integrationRow('Провайдер', INTEGRATION_DETAILS.provider, 'provider')}${integrationRow('Адрес API', INTEGRATION_DETAILS.endpoint, 'endpoint')}${integrationRow('Модель', INTEGRATION_DETAILS.model, 'model')}${integrationRow('Название ключа', INTEGRATION_DETAILS.keyName, 'key-name')}${integrationRow('Project ID', INTEGRATION_DETAILS.projectId, 'project-id')}${integrationRow('Organization ID', INTEGRATION_DETAILS.organizationId, 'organization-id')}</div><p class="integration-note">Эти параметры можно копировать: они не дают доступа без отдельного секретного ключа.</p></section><section class="integration-panel secret-panel"><p class="eyebrow">Секрет</p><h2>API‑ключ защищён</h2><div class="secret-value"><code>••••••••••••••••••••••••</code><span>Только на сервере</span></div><p>Полный ключ нельзя показать или скопировать из сайта. Иначе любой человек или вредоносное расширение браузера сможет получить доступ и расходовать ваш баланс.</p><a class="primary integration-link" href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer">Управлять ключами в OpenAI ↗</a><small>Для нового внешнего сервиса создавайте отдельный ключ. Тогда его можно отключить, не останавливая IceFresh.</small></section></div><section class="integration-panel service-panel"><div class="panel-head"><div><p class="eyebrow">Другие AI и сервисы</p><h2>Единый шлюз без привязки к одному поставщику</h2><p class="integration-note">Провайдер выбирается серверной настройкой AI_PROVIDER. Секреты Anthropic, Gemini и custom endpoint не попадают в браузер. Custom endpoint допускается только по HTTPS и блокирует localhost/частные сети.</p></div><span class="owner-only">Только владелец</span></div><div class="integration-steps"><article><b>1</b><div><h3>Создайте отдельный ключ</h3><p>Откройте OpenAI Platform, выберите проект IceFresh и создайте новый ключ специально для нужного сервиса.</p></div></article><article><b>2</b><div><h3>Скопируйте параметры</h3><p>Используйте Project ID, Organization ID, адрес API и модель из паспорта подключения выше.</p></div></article><article><b>3</b><div><h3>Сохраните ключ как секрет</h3><p>Вставляйте его только в защищённое поле настроек внешнего сервиса. Не отправляйте ключ в чат и не храните в таблицах.</p></div></article></div></section><div class="integration-grid compact"><section class="integration-panel"><p class="eyebrow">Лимиты IceFresh</p><h2>Контроль расходов</h2><dl class="integration-summary"><div><dt>На пользователя</dt><dd>до 12 запросов в час</dd></div><div><dt>На организацию</dt><dd>до 500 запросов в месяц</dd></div><div><dt>Данные сотрудников</dt><dd>без финансов и начислений</dd></div></dl></section><section class="integration-panel"><p class="eyebrow">Важно</p><h2>Что можно передавать</h2><ul class="integration-checklist"><li>Поддерживаемая архитектура: OpenAI, Anthropic/Claude, Google Gemini, OpenAI-compatible HTTPS endpoint.</li><li>Можно: параметры из паспорта подключения.</li><li>Можно: отдельный ключ через защищённое поле сервиса.</li><li>Нельзя: публиковать секретный ключ на сайте или в сообщениях.</li></ul></section></div>`;
@@ -1136,6 +1251,7 @@ const views = {
   warehouse: warehouseView,
   analytics: analyticsView,
   operations: operationsView,
+  'contact-settings': contactsSettingsView,
   ai: aiView,
   integrations: integrationsView
 };
@@ -1301,6 +1417,18 @@ function openProductForm(product = null) {
   $('#modal').showModal();
 }
 
+function openSocialLinkForm(link = null, presetPlatform = '') {
+  if (!manager || !socialLinksAvailable || !socialTools) return;
+  const preset = DEFAULT_SOCIAL_LINKS.find(item => item.platform === presetPlatform);
+  const platform = link?.platform || preset?.platform || '';
+  const label = link?.label || preset?.label || socialTools.labelForPlatform(platform);
+  const sortOrder = link?.sortOrder ?? preset?.sortOrder ?? (Math.max(0, ...data.socialLinks.map(item => item.sortOrder)) + 10);
+  editingRecord = link ? { type: 'social-links', id: link.id } : null;
+  $('#modal-title').textContent = link ? 'Изменить контакт' : 'Добавить контакт';
+  $('#fields').innerHTML = `<div class="form-row"><label>Платформа<input name="platform" value="${C.esc(platform)}" pattern="[a-z0-9][a-z0-9_-]{0,39}" maxlength="40" ${link ? 'readonly' : 'required'} placeholder="instagram"></label><label>Порядок<input name="sortOrder" type="number" min="0" max="100000" step="1" value="${sortOrder}" required></label></div><label>Название для сайта<input name="label" value="${C.esc(label)}" minlength="1" maxlength="80" required placeholder="Например, Instagram"></label><label>URL<input name="url" type="text" inputmode="url" value="${C.esc(link?.url || '')}" maxlength="2048" placeholder="https://…"><small>Для социальных сетей и 2GIS используйте HTTPS. Для будущих email/телефона поддерживаются mailto: и tel:.</small></label><div class="form-checks"><label class="check"><input name="enabled" type="checkbox" ${link?.enabled ? 'checked' : ''}> Показывать на странице «Контакты»</label></div>`;
+  $('#modal').showModal();
+}
+
 function openScheduleForm(item = null, dateKey = '') {
   editingRecord = item ? { type: 'calendar', id: item.id } : null;
   let scheduled = item ? new Date(item.scheduledAt) : new Date(Date.now() + 3600000);
@@ -1409,6 +1537,40 @@ async function saveProduct(form) {
   await loadPublicCatalogue();
 }
 
+async function saveSocialLink(form) {
+  if (!manager || !socialLinksAvailable || !socialTools) throw new Error('Хранилище контактов недоступно.');
+  const raw = Object.fromEntries(new FormData(form));
+  const validation = socialTools.validateSocialLinkInput({
+    platform: raw.platform,
+    url: raw.url,
+    label: raw.label,
+    enabled: form.elements.enabled.checked
+  });
+  if (!validation.valid) {
+    if (validation.reason === 'url') throw new Error('Укажите безопасный URL: HTTPS, либо mailto:/tel: для соответствующей платформы.');
+    if (validation.reason === 'platform') throw new Error('Платформа должна быть коротким идентификатором: латиница, цифры, дефис или подчёркивание.');
+    throw new Error('Проверьте название контакта.');
+  }
+  const sortOrder = Number(raw.sortOrder);
+  if (!Number.isInteger(sortOrder) || sortOrder < 0 || sortOrder > 100000) throw new Error('Порядок должен быть целым числом от 0 до 100000.');
+  const payload = {
+    platform: validation.value.platform,
+    url: validation.value.url,
+    label: validation.value.label,
+    enabled: validation.value.enabled,
+    sort_order: sortOrder
+  };
+  const existing = editingRecord?.type === 'social-links'
+    ? data.socialLinks.find(item => item.id === editingRecord.id)
+    : null;
+  const result = existing
+    ? await supabase.from('social_links').update(payload).eq('id', existing.id)
+    : await supabase.from('social_links').insert({ ...payload, organization_id: profile.organization_id, created_by: session.user.id });
+  if (result.error) throw result.error;
+  await loadPublicContacts();
+  return true;
+}
+
 async function saveSchedule(form) {
   const raw = Object.fromEntries(new FormData(form));
   const scheduled = new Date(String(raw.scheduledAt));
@@ -1447,6 +1609,7 @@ async function saveRecord(form) {
     if (error) throw error;
     return true;
   }
+  if (section === 'contact-settings') return saveSocialLink(form);
   if (section === 'products') return saveProduct(form);
   if (section === 'calendar') return saveSchedule(form);
   const raw = Object.fromEntries(new FormData(form));
@@ -1674,6 +1837,39 @@ async function deleteSchedule(id) {
   }
 }
 
+async function toggleSocialLink(id) {
+  if (!manager || !socialLinksAvailable || !socialTools) return;
+  const link = data.socialLinks.find(item => item.id === id);
+  if (!link) return;
+  const enabled = !link.enabled;
+  const validation = socialTools.validateSocialLinkInput({ ...link, enabled });
+  if (!validation.valid) {
+    toast('Сначала добавьте корректный URL.');
+    openSocialLinkForm(link);
+    return;
+  }
+  const { error } = await supabase.from('social_links').update({ enabled }).eq('id', id);
+  if (error) {
+    toast(friendlyError(error));
+    return;
+  }
+  await Promise.all([loadAll(), loadPublicContacts()]);
+  render();
+  toast(enabled ? 'Контакт опубликован' : 'Контакт скрыт');
+}
+
+async function deleteSocialLink(id) {
+  if (!manager || !confirm('Удалить эту контактную ссылку?')) return;
+  const { error } = await supabase.from('social_links').delete().eq('id', id);
+  if (error) {
+    toast(friendlyError(error));
+    return;
+  }
+  await Promise.all([loadAll(), loadPublicContacts()]);
+  render();
+  toast('Контакт удалён');
+}
+
 function scrollPublic(id) {
   document.getElementById(id)?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
 }
@@ -1800,6 +1996,26 @@ $('#app').onclick = async event => {
   const target = event.target.closest('[data-go]');
   if (target) {
     go(target.dataset.go);
+    return;
+  }
+  const addSocial = event.target.closest('[data-add-social-link]');
+  if (addSocial) {
+    openSocialLinkForm(null, addSocial.dataset.addSocialLink || '');
+    return;
+  }
+  const editSocial = event.target.closest('[data-edit-social-link]');
+  if (editSocial) {
+    openSocialLinkForm(data.socialLinks.find(item => item.id === editSocial.dataset.editSocialLink));
+    return;
+  }
+  const toggleSocial = event.target.closest('[data-toggle-social-link]');
+  if (toggleSocial) {
+    await toggleSocialLink(toggleSocial.dataset.toggleSocialLink);
+    return;
+  }
+  const deleteSocial = event.target.closest('[data-delete-social-link]');
+  if (deleteSocial) {
+    await deleteSocialLink(deleteSocial.dataset.deleteSocialLink);
     return;
   }
   const emptyAction = event.target.closest('[data-empty-route]');
@@ -2001,7 +2217,8 @@ $('#backup').onclick = () => {
     accruals: data.accruals,
     products: data.products,
     schedule: data.schedule,
-    requests: data.requests
+    requests: data.requests,
+    socialLinks: data.socialLinks
   };
   const anchor = document.createElement('a');
   anchor.href = URL.createObjectURL(new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' }));

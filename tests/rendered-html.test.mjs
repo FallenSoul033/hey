@@ -39,6 +39,13 @@ test("serves direct clean CRM routes without indexing them", async () => {
   assert.match(response.headers.get("cache-control"), /no-store/);
 });
 
+test("serves the public contacts route through the indexable application shell", async () => {
+  const response = await render("/contacts");
+  assert.equal(response.status, 200);
+  assert.equal(await response.text(), "IceFresh application shell");
+  assert.equal(response.headers.get("x-robots-tag"), "index, follow");
+});
+
 test("ships the configured Russian IceFresh application", async () => {
   const root = new URL("../public/", import.meta.url);
   const [html, config, manifest, headers, serviceWorker, robots, sitemap, version] = await Promise.all([
@@ -97,7 +104,7 @@ test("keeps public enquiries separate from protected CRM records", async () => {
   assert.match(routes, /screen: 'public'/);
   assert.match(app, /functions\/v1\/public-order-request/);
   assert.match(app, /from\('website_requests'\)/);
-  assert.match(app, /if \(route\(\) !== 'home'\) replaceRoute\('login'\)/);
+  assert.match(app, /\['home', 'contacts'\]\.includes\(route\(\)\)/);
   assert.doesNotMatch(app, /service_role|sb_secret_/i);
   assert.match(migration, /alter table public\.website_requests enable row level security/);
   assert.match(migration, /revoke all privileges on table public\.website_requests from anon, authenticated/);

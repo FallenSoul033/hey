@@ -33,6 +33,12 @@ test("clean CRM URLs and legacy hash links resolve to the same protected route",
   assert.equal(routes.pathFor("orders"), "/app/orders");
   assert.equal(routes.pathFor("login"), "/app/login");
   assert.equal(routes.pathFor("home"), "/");
+  assert.equal(routes.parseLocation("/contacts", ""), "contacts");
+  assert.equal(routes.pathFor("contacts"), "/contacts");
+  assert.deepEqual(
+    structuredClone(routes.resolve("contacts", guest)),
+    { screen: "public", route: "contacts" },
+  );
 });
 
 test("CRM routes remain protected while enquiries are available to staff", async () => {
@@ -88,5 +94,13 @@ test("CRM routes remain protected while enquiries are available to staff", async
   assert.deepEqual(
     structuredClone(routes.resolve("operations", admin)),
     { screen: "app", route: "operations" },
+  );
+  assert.deepEqual(
+    structuredClone(routes.resolve("contact-settings", staff)),
+    { screen: "app", route: "dashboard" },
+  );
+  assert.deepEqual(
+    structuredClone(routes.resolve("contact-settings", admin)),
+    { screen: "app", route: "contact-settings" },
   );
 });
