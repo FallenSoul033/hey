@@ -564,15 +564,15 @@ async function init() {
 }
 
 async function loadPublicCatalogue() {
-  if (!supabase) return;
-  const { data: rows, error } = await supabase
-    .from('products')
-    .select('id,name,description,weight_label,default_price,unit,photo_path,active,public_visible,sort_order')
-    .eq('active', true)
-    .eq('public_visible', true)
-    .order('sort_order')
-    .order('name');
-  if (!error && rows?.length) publicProducts = rows.map(normalizeProduct);
+  try {
+    const response = await fetch('/api/public-products', { cache: 'no-store' });
+    if (!response.ok) throw new Error('public-products-unavailable');
+    const result = await response.json();
+    const rows = Array.isArray(result.products) ? result.products : [];
+    if (rows.length) publicProducts = rows.map(normalizeProduct);
+  } catch {
+    publicProducts = [];
+  }
   renderPublicCatalogue();
 }
 

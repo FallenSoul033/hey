@@ -55,6 +55,13 @@ test('RC1.6.1 preserves RPC exposure and does not grant anon/public execution', 
   assert.doesNotMatch(sql, /grant execute[^;]+to public/i);
 });
 
+test('the exact candidate exposes only v2 order writers to authenticated callers', async () => {
+  const sql = await read('supabase/migrations/202608290001_exact_candidate_security_hardening.sql');
+  assert.match(sql, /revoke all on function public\.save_order_manager_rc\(uuid,uuid,date,uuid,jsonb,numeric,text\)[\s\S]*from public, anon, authenticated/i);
+  assert.match(sql, /revoke all on function public\.save_order_operational_rc\(uuid,uuid,date,uuid,jsonb,text\)[\s\S]*from public, anon, authenticated/i);
+  assert.doesNotMatch(sql, /revoke[^;]+save_order_(?:manager|operational)_rc_v2/i);
+});
+
 test('package and lock metadata use the same RC1.6 version', async () => {
   const pkg = JSON.parse(await read('package.json'));
   const lock = JSON.parse(await read('package-lock.json'));

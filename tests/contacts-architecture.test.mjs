@@ -2,12 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const [html, app, routes, migration, reconciliation, worker, proxy] = await Promise.all([
+const [html, app, routes, migration, reconciliation, hardening, worker, proxy] = await Promise.all([
   readFile(new URL('../public/app-shell.html', import.meta.url), 'utf8'),
   readFile(new URL('../public/app.js', import.meta.url), 'utf8'),
   readFile(new URL('../public/routes.js', import.meta.url), 'utf8'),
   readFile(new URL('../supabase/migrations/202608280001_social_links.sql', import.meta.url), 'utf8'),
   readFile(new URL('../supabase/migrations/202608280002_social_links_exact_candidate.sql', import.meta.url), 'utf8'),
+  readFile(new URL('../supabase/migrations/202608290001_exact_candidate_security_hardening.sql', import.meta.url), 'utf8'),
   readFile(new URL('../worker/index.ts', import.meta.url), 'utf8'),
   readFile(new URL('../worker/public-social-links.ts', import.meta.url), 'utf8').catch(() => ''),
 ]);
@@ -70,8 +71,28 @@ test('public contacts use a same-origin compatibility endpoint while the migrati
   assert.match(worker, /url\.pathname === "\/api\/public-social-links"/);
   assert.match(proxy, /PGRST205/);
   assert.match(proxy, /PUBLIC_FIELDS = "platform,url,label,sort_order"/);
-  assert.doesNotMatch(proxy, /searchParams\.set\("enabled"/);
+  assert.match(proxy, /searchParams\.set\("organization_id", `eq\.\$\{config\.organizationId\}`\)/);
+  assert.match(proxy, /ICEFRESH_ORGANIZATION_ID/);
   assert.match(migration, /using \(enabled and url <> ''\)/i);
   assert.match(proxy, /available:\s*false/);
   assert.match(proxy, /Cache-Control",\s*"no-store"/);
+});
+
+test('public branded catalogue also uses the organization-scoped same-origin endpoint', () => {
+  assert.match(app, /fetch\('\/api\/public-products'/);
+  assert.doesNotMatch(app, /from\('products'\)[\s\S]{0,300}eq\('public_visible', true\)/);
+  assert.match(worker, /handlePublicProducts/);
+  assert.match(worker, /url\.pathname === "\/api\/public-products"/);
+  assert.match(proxy, /PUBLIC_PRODUCT_FIELDS/);
+  assert.match(proxy, /publicRows\(config, "products"/);
+});
+
+test('security hardening closes cross-tenant product reads and legacy RPC bypasses', () => {
+  assert.match(hardening, /products_authenticated_select[\s\S]*organization_id = \(select private\.current_org_id\(\)\)/i);
+  assert.doesNotMatch(hardening, /active and public_visible[\s\S]*or organization_id/i);
+  assert.match(hardening, /revoke all on function public\.create_organization\(text, text\) from public, anon, authenticated/i);
+  assert.match(hardening, /revoke all on function public\.save_order_manager_rc\(uuid,uuid,date,uuid,jsonb,numeric,text\)[\s\S]*from public, anon, authenticated/i);
+  assert.match(hardening, /revoke all on function public\.save_order_operational_rc\(uuid,uuid,date,uuid,jsonb,text\)[\s\S]*from public, anon, authenticated/i);
+  assert.match(hardening, /grant select \(organization_id\) on public\.products to anon/i);
+  assert.match(hardening, /grant select \(organization_id\) on public\.social_links to anon/i);
 });

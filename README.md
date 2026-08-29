@@ -76,4 +76,5 @@
 7. Проверить owner/admin/staff права.
 8. Проверить iPhone/Android/PWA update/offline states.
 9. Запустить Supabase Security + Performance Advisors.
-10. Только после зелёного отчёта сохранить production version и отдельно подтвердить deploy на icefresh.kz.
+10. До smoke-test задать Worker-переменную `ICEFRESH_ORGANIZATION_ID` равной UUID канонической организации IceFresh. Публичные Contacts/catalog работают fail-closed без валидного UUID.
+11. Только после зелёного отчёта сохранить production version и отдельно подтвердить deploy на icefresh.kz.
