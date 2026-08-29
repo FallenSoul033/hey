@@ -1,6 +1,32 @@
 {
   "schemaVersion": 1,
   "productId": "bag1",
-  "enabled": false,
-  "frames": []
+  "enabled": true,
+  "sourceClassification": "DERIVED_FROM_APPROVED_PHOTOS",
+  "frames": [
+    "frame-01.webp",
+    "frame-02.webp",
+    "frame-03.webp",
+    "frame-04.webp",
+    "frame-05.webp",
+    "frame-06.webp",
+    "frame-07.webp",
+    "frame-08.webp",
+    "frame-09.webp",
+    "frame-10.webp",
+    "frame-11.webp",
+    "frame-12.webp",
+    "frame-13.webp",
+    "frame-14.webp",
+    "frame-15.webp",
+    "frame-16.webp",
+    "frame-17.webp",
+    "frame-18.webp",
+    "frame-19.webp",
+    "frame-20.webp",
+    "frame-21.webp",
+    "frame-22.webp",
+    "frame-23.webp",
+    "frame-24.webp"
+  ]
 }

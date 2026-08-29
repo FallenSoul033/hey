@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import {
   createDragTracker,
   evaluateViewerPolicy,
@@ -11,6 +12,25 @@ import {
 import { PRODUCT_360_MANIFESTS } from '../public/product-360-config.js';
 
 const validFrames = Array.from({ length: 24 }, (_, index) => `frame-${String(index + 1).padStart(2, '0')}.webp`);
+
+test('published product manifests expose all 72 derived-photo frames in canonical order', async () => {
+  for (const productId of ['cup250', 'bag1', 'bag2']) {
+    const directory = new URL(`../public/assets/product-360/${productId}/`, import.meta.url);
+    const manifest = JSON.parse(await readFile(new URL('manifest.json', directory), 'utf8'));
+    assert.equal(manifest.enabled, true);
+    assert.equal(manifest.productId, productId);
+    assert.equal(manifest.sourceClassification, 'DERIVED_FROM_APPROVED_PHOTOS');
+    assert.deepEqual(manifest.frames, validFrames);
+    assert.equal(validateManifest(manifest, productId).valid, true);
+
+    for (const frame of manifest.frames) {
+      const bytes = await readFile(new URL(frame, directory));
+      assert.equal(bytes.subarray(0, 4).toString('ascii'), 'RIFF');
+      assert.equal(bytes.subarray(8, 12).toString('ascii'), 'WEBP');
+      assert.ok(bytes.length > 0, `${productId}/${frame} must not be empty`);
+    }
+  }
+});
 
 test('360 manifests require 24-36 explicit real-photo frames', () => {
   const result = validateManifest({
