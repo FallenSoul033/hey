@@ -23,4 +23,4 @@ create policy products_authenticated_select
 -- PostgREST requires SELECT privilege on a filtered column. organization_id is
 -- a public UUID, but the Worker never returns it to the browser.
 grant select (organization_id) on public.products to anon;
-grant select (organization_id) on public.social_links to anon;
+grant select (organization_id, enabled) on public.social_links to anon;

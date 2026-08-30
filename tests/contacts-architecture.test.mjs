@@ -105,5 +105,5 @@ test('security hardening closes cross-tenant product reads and legacy RPC bypass
   assert.match(hardening, /revoke all on function public\.save_order_manager_rc\(uuid,uuid,date,uuid,jsonb,numeric,text\)[\s\S]*from public, anon, authenticated/i);
   assert.match(hardening, /revoke all on function public\.save_order_operational_rc\(uuid,uuid,date,uuid,jsonb,text\)[\s\S]*from public, anon, authenticated/i);
   assert.match(hardening, /grant select \(organization_id\) on public\.products to anon/i);
-  assert.match(hardening, /grant select \(organization_id\) on public\.social_links to anon/i);
+  assert.match(hardening, /grant select \(organization_id, enabled\) on public\.social_links to anon/i);
 });
