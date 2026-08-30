@@ -38,7 +38,16 @@ function validSupabaseUrl(value: string): string {
 
 function validPublishableKey(value: string): string {
   const key = value.trim();
-  return /^[A-Za-z0-9._-]{20,512}$/.test(key) ? key : "";
+  if (/^sb_publishable_[A-Za-z0-9_-]{20,512}$/.test(key)) return key;
+  const parts = key.split(".");
+  if (parts.length !== 3 || !parts.every((part) => /^[A-Za-z0-9_-]+$/.test(part))) return "";
+  try {
+    const encoded = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const payload = JSON.parse(atob(encoded.padEnd(Math.ceil(encoded.length / 4) * 4, "="))) as { role?: unknown };
+    return payload.role === "anon" ? key : "";
+  } catch {
+    return "";
+  }
 }
 
 function validOrganizationId(value: string): string {
@@ -71,6 +80,13 @@ async function publicRows(
   const endpoint = new URL(`/rest/v1/${relation}`, config.url);
   endpoint.searchParams.set("select", fields);
   endpoint.searchParams.set("organization_id", `eq.${config.organizationId}`);
+  if (relation === "social_links") {
+    endpoint.searchParams.set("enabled", "eq.true");
+    endpoint.searchParams.set("url", "neq.");
+  } else {
+    endpoint.searchParams.set("active", "eq.true");
+    endpoint.searchParams.set("public_visible", "eq.true");
+  }
   endpoint.searchParams.set("order", order);
   const upstream = await fetch(endpoint, {
     method: "GET",

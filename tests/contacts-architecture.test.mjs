@@ -72,6 +72,8 @@ test('public contacts use a same-origin compatibility endpoint while the migrati
   assert.match(proxy, /PGRST205/);
   assert.match(proxy, /PUBLIC_FIELDS = "platform,url,label,sort_order"/);
   assert.match(proxy, /searchParams\.set\("organization_id", `eq\.\$\{config\.organizationId\}`\)/);
+  assert.match(proxy, /relation === "social_links"[\s\S]*searchParams\.set\("enabled", "eq\.true"\)/);
+  assert.match(proxy, /searchParams\.set\("url", "neq\."\)/);
   assert.match(proxy, /ICEFRESH_ORGANIZATION_ID/);
   assert.match(migration, /using \(enabled and url <> ''\)/i);
   assert.match(proxy, /available:\s*false/);
@@ -85,6 +87,15 @@ test('public branded catalogue also uses the organization-scoped same-origin end
   assert.match(worker, /url\.pathname === "\/api\/public-products"/);
   assert.match(proxy, /PUBLIC_PRODUCT_FIELDS/);
   assert.match(proxy, /publicRows\(config, "products"/);
+  assert.match(proxy, /searchParams\.set\("active", "eq\.true"\)/);
+  assert.match(proxy, /searchParams\.set\("public_visible", "eq\.true"\)/);
+});
+
+test('public proxy accepts only publishable or legacy anon Supabase keys', () => {
+  assert.match(proxy, /\^sb_publishable_/);
+  assert.match(proxy, /payload\.role === "anon"/);
+  assert.doesNotMatch(proxy, /\^\[A-Za-z0-9\._-\]\{20,512\}\$/);
+  assert.doesNotMatch(proxy, /sb_secret_/);
 });
 
 test('security hardening closes cross-tenant product reads and legacy RPC bypasses', () => {
