@@ -68,6 +68,6 @@ test('RC1.6 mobile editor and product cards have explicit responsive safeguards'
 
 test('RC1.6 service worker cache revision isolates the final premium asset mapping', async () => {
   const sw = await read('public/sw.js');
-  assert.match(sw, /icefresh-rc1-6-v8/);
+  assert.match(sw, /icefresh-rc1-6-v9/);
   assert.match(sw, /pathname\.startsWith\('\/assets\/'\)/);
 });

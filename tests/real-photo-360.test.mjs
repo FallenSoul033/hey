@@ -97,7 +97,8 @@ test('configured mounts read numeric data attributes without relying on DOMStrin
 function viewerHarness({ failFrame = false } = {}) {
   const listeners = new Map();
   const classes = new Set();
-  const image = { src: 'https://icefresh.test/poster.webp', currentSrc: '', draggable: true };
+  const attributes = new Map([['data-product-360', 'cup250']]);
+  const image = { src: 'https://icefresh.test/poster.webp', currentSrc: '', draggable: true, alt: 'Лёд в стакане 250 г' };
   const host = {
     dataset: { product360: 'cup250' },
     classList: {
@@ -105,6 +106,9 @@ function viewerHarness({ failFrame = false } = {}) {
       remove(...values) { values.forEach(value => classes.delete(value)); },
     },
     querySelector(selector) { return selector === 'img' ? image : null; },
+    getAttribute(name) { return attributes.has(name) ? attributes.get(name) : null; },
+    setAttribute(name, value) { attributes.set(name, String(value)); },
+    removeAttribute(name) { attributes.delete(name); },
     addEventListener(type, listener) { listeners.set(type, listener); },
     removeEventListener(type) { listeners.delete(type); },
     setPointerCapture() {},
@@ -130,7 +134,7 @@ function viewerHarness({ failFrame = false } = {}) {
     },
   });
   return {
-    controller, host, image, loaded, classes,
+    controller, host, image, loaded, classes, attributes,
     get observed() { return observed; },
     intersect() { intersectionCallback([{ isIntersecting: true }]); },
     dispatch(type, overrides = {}) {
@@ -175,6 +179,41 @@ test('mounted viewer claims only horizontal motion and retains its frame after r
   harness.dispatch('pointerup');
   assert.equal(harness.controller.frame, 2);
   assert.equal(harness.image.src.endsWith('/frame-03.webp'), true);
+});
+
+test('ready viewer exposes slider semantics and supports cyclic keyboard rotation', async () => {
+  const harness = viewerHarness();
+  harness.intersect();
+  await harness.controller.prepare();
+
+  assert.equal(harness.attributes.get('tabindex'), '0');
+  assert.equal(harness.attributes.get('role'), 'slider');
+  assert.equal(harness.attributes.get('aria-label'), 'Лёд в стакане 250 г — обзор 360°');
+  assert.equal(harness.attributes.get('aria-orientation'), 'horizontal');
+  assert.equal(harness.attributes.get('aria-valuemin'), '1');
+  assert.equal(harness.attributes.get('aria-valuemax'), '24');
+  assert.equal(harness.attributes.get('aria-valuenow'), '1');
+
+  const right = harness.dispatch('keydown', { key: 'ArrowRight' });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(right.prevented, true);
+  assert.equal(harness.controller.frame, 1);
+  assert.equal(harness.image.src.endsWith('/frame-02.webp'), true);
+  assert.equal(harness.attributes.get('aria-valuenow'), '2');
+  assert.equal(harness.attributes.get('aria-valuetext'), 'Ракурс 2 из 24');
+
+  harness.dispatch('keydown', { key: 'Home' });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(harness.controller.frame, 0);
+  harness.dispatch('keydown', { key: 'ArrowLeft' });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(harness.controller.frame, 23);
+  assert.equal(harness.attributes.get('aria-valuenow'), '24');
+
+  harness.controller.destroy();
+  assert.equal(harness.attributes.has('tabindex'), false);
+  assert.equal(harness.attributes.has('role'), false);
+  assert.equal(harness.attributes.has('aria-label'), false);
 });
 
 test('a missing frame restores the original poster without throwing', async () => {

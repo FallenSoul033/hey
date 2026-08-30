@@ -91,6 +91,11 @@ export function createDragTracker({ frameCount, pixelsPerFrame = 12, initialFram
       axis = 'pending';
       return currentFrame;
     },
+    setFrame(value) {
+      currentFrame = wrapFrameIndex(value, count);
+      startFrame = currentFrame;
+      return currentFrame;
+    },
     get frame() {
       return currentFrame;
     },
@@ -139,14 +144,60 @@ export function mountRealPhoto360(host, options = {}) {
   let lastPointer = null;
   let hint = null;
   let preloadStarted = false;
+  let accessibilityEnabled = false;
   const loadedFrames = new Set();
   const pendingFrames = new Map();
+  const managedAccessibilityAttributes = [
+    'tabindex',
+    'role',
+    'aria-label',
+    'aria-orientation',
+    'aria-valuemin',
+    'aria-valuemax',
+    'aria-valuenow',
+    'aria-valuetext',
+    'aria-keyshortcuts',
+  ];
+  const originalAccessibilityAttributes = new Map(managedAccessibilityAttributes.map(name => [
+    name,
+    host?.getAttribute?.(name) ?? null,
+  ]));
 
   const setState = (state, reason = '') => {
     if (!host?.dataset) return;
     host.dataset.viewer360 = state;
     if (reason) host.dataset.viewer360Reason = reason;
     else delete host.dataset.viewer360Reason;
+  };
+
+  const updateAccessibleFrame = () => {
+    if (!accessibilityEnabled || !tracker || !frameUrls.length) return;
+    const frameNumber = tracker.frame + 1;
+    host.setAttribute('aria-valuenow', String(frameNumber));
+    host.setAttribute('aria-valuetext', `Ракурс ${frameNumber} из ${frameUrls.length}`);
+  };
+
+  const enableAccessibility = () => {
+    if (!host?.setAttribute || !frameUrls.length) return;
+    const productLabel = String(image?.alt || 'Товар IceFresh').trim() || 'Товар IceFresh';
+    host.setAttribute('tabindex', '0');
+    host.setAttribute('role', 'slider');
+    host.setAttribute('aria-label', `${productLabel} — обзор 360°`);
+    host.setAttribute('aria-orientation', 'horizontal');
+    host.setAttribute('aria-valuemin', '1');
+    host.setAttribute('aria-valuemax', String(frameUrls.length));
+    host.setAttribute('aria-keyshortcuts', 'ArrowLeft ArrowRight Home End');
+    accessibilityEnabled = true;
+    updateAccessibleFrame();
+  };
+
+  const restoreAccessibility = () => {
+    if (!accessibilityEnabled || !host) return;
+    for (const [name, value] of originalAccessibilityAttributes) {
+      if (value === null) host.removeAttribute?.(name);
+      else host.setAttribute?.(name, value);
+    }
+    accessibilityEnabled = false;
   };
 
   const fallback = reason => {
@@ -158,6 +209,7 @@ export function mountRealPhoto360(host, options = {}) {
     host?.classList?.remove('is-360-ready', 'is-360-dragging');
     hint?.remove?.();
     hint = null;
+    restoreAccessibility();
     observer?.disconnect?.();
     setState('fallback', reason);
   };
@@ -184,7 +236,10 @@ export function mountRealPhoto360(host, options = {}) {
     if (failed || !image || !frameUrls.length) return;
     try {
       const url = await loadFrame(index);
-      if (!failed && tracker?.frame === wrapFrameIndex(index, frameUrls.length)) image.src = url;
+      if (!failed && tracker?.frame === wrapFrameIndex(index, frameUrls.length)) {
+        image.src = url;
+        updateAccessibleFrame();
+      }
     } catch {
       fallback('frame-load-failed');
     }
@@ -211,6 +266,7 @@ export function mountRealPhoto360(host, options = {}) {
     if (failed || hint || !host) return;
     host.classList?.add('is-360-ready');
     setState('ready');
+    enableAccessibility();
     hint = globalThis.document?.createElement?.('span') || null;
     if (hint) {
       hint.className = 'product-360-hint';
@@ -289,6 +345,23 @@ export function mountRealPhoto360(host, options = {}) {
     lastPointer = null;
   };
 
+  const onKeyDown = event => {
+    const key = String(event?.key || '');
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(key) || failed) return;
+    event.preventDefault?.();
+    void prepare().then(ready => {
+      if (!ready || failed || !tracker || !frameUrls.length) return;
+      preloadRemaining();
+      const nextFrame = key === 'Home'
+        ? 0
+        : key === 'End'
+          ? frameUrls.length - 1
+          : tracker.frame + (key === 'ArrowRight' ? 1 : -1);
+      tracker.setFrame(nextFrame);
+      void displayFrame(tracker.frame);
+    });
+  };
+
   if (!host || !image || !manifestUrl || !policy.allowed) {
     fallback(policy.reason || 'not-configured');
   } else {
@@ -298,6 +371,7 @@ export function mountRealPhoto360(host, options = {}) {
     host.addEventListener('pointermove', onPointerMove);
     host.addEventListener('pointerup', endPointer);
     host.addEventListener('pointercancel', endPointer);
+    host.addEventListener('keydown', onKeyDown);
     observer = observerFactory(entries => {
       if (entries.some(entry => entry.isIntersecting)) {
         observer?.disconnect?.();
@@ -317,8 +391,10 @@ export function mountRealPhoto360(host, options = {}) {
       host?.removeEventListener?.('pointermove', onPointerMove);
       host?.removeEventListener?.('pointerup', endPointer);
       host?.removeEventListener?.('pointercancel', endPointer);
+      host?.removeEventListener?.('keydown', onKeyDown);
       host?.classList?.remove('is-360-ready', 'is-360-dragging');
       hint?.remove?.();
+      restoreAccessibility();
       if (image && poster) image.src = poster;
     },
   };

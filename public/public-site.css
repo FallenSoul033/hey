@@ -81,7 +81,7 @@ textarea{font:inherit}
 /* Real-photo product rotation stays independent from decorative WebGL. */
 .public-nav a{border:0;background:transparent;color:#496677;padding:10px 14px;border-radius:10px;font-weight:700;text-decoration:none}.public-nav a:hover,.public-nav a[aria-current="page"]{background:var(--public-pale);color:var(--public-blue)}
 .public-mobile-order,.public-mobile-contact,.public-mobile-home{display:none}
-.product-media[data-product-360]{touch-action:pan-y;user-select:none;-webkit-user-select:none}.product-media[data-product-360] img{pointer-events:none;-webkit-user-drag:none}.product-media.is-360-ready{cursor:grab}.product-media.is-360-dragging{cursor:grabbing}
+.product-media[data-product-360]{touch-action:pan-y;user-select:none;-webkit-user-select:none}.product-media[data-product-360] img{pointer-events:none;-webkit-user-drag:none}.product-media.is-360-ready{cursor:grab}.product-media.is-360-ready:focus-visible{outline:3px solid var(--public-blue);outline-offset:3px;box-shadow:0 0 0 6px #fff}.product-media.is-360-dragging{cursor:grabbing}
 .product-360-hint{position:absolute;z-index:3;right:12px;bottom:12px;padding:7px 10px;border:1px solid #ffffffa8;border-radius:999px;background:#06374cd9;color:#fff;font-size:11px;font-weight:900;letter-spacing:.04em;pointer-events:none;box-shadow:0 7px 18px #06374c24}
 
 /* Dedicated public contacts route. */

@@ -11,7 +11,7 @@ test('release identifiers are consistent across app, version metadata and servic
   const version = JSON.parse(versionText);
   assert.equal(version.version, '12.0.0-rc.1.6');
   assert.match(app, /APP_VERSION = '12\.0\.0-rc\.1\.6'/);
-  assert.match(sw, /icefresh-rc1-6-v8/);
+  assert.match(sw, /icefresh-rc1-6-v9/);
   assert.equal(version.published, false);
 });
 

@@ -51,6 +51,6 @@ test('public catalogue uses bounded display derivatives while master mapping sta
 
 test('service worker cache revision is bumped for the new storefront assets', async () => {
   const sw = await read('public/sw.js');
-  assert.match(sw, /icefresh-rc1-6-v8/);
+  assert.match(sw, /icefresh-rc1-6-v9/);
   assert.match(sw, /pathname\.startsWith\('\/premium-3d'\)/);
 });

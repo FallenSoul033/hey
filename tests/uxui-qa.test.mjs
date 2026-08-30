@@ -6,6 +6,7 @@ const html = await readFile(new URL('../public/app-shell.html', import.meta.url)
 const app = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
 const styles = await readFile(new URL('../public/styles.css', import.meta.url), 'utf8');
 const publicStyles = await readFile(new URL('../public/public-site.css', import.meta.url), 'utf8');
+const serviceWorker = await readFile(new URL('../public/sw.js', import.meta.url), 'utf8');
 
 const contrast = (a, b) => {
   const norm = h => {
@@ -39,6 +40,14 @@ test('public form and actions expose usable states and readable labels', () => {
   assert.match(publicStyles, /public-order-form label\{[^}]*font-size:13px/);
   assert.match(publicStyles, /public-primary:disabled/);
   assert.match(publicStyles, /public-primary:active/);
+});
+
+test('public 360 and Contacts controls retain native keyboard and assistive semantics', () => {
+  assert.match(publicStyles, /product-media\.is-360-ready:focus-visible/);
+  assert.match(html, /<nav id="public-contact-links"[^>]*aria-label="Социальные контакты IceFresh"/);
+  assert.match(app, /<a class="contact-link-card" href=/);
+  assert.doesNotMatch(app, /<a class="contact-link-card" role="listitem"/);
+  assert.match(serviceWorker, /icefresh-rc1-6-v9/);
 });
 
 test('public site remains available when the external Supabase SDK CDN fails', () => {

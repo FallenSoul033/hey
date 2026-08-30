@@ -604,7 +604,7 @@ function renderPublicContacts() {
   container.innerHTML = links.map(link => {
     const external = link.href.startsWith('https://');
     const attributes = external ? ' target="_blank" rel="noopener noreferrer external"' : '';
-    return `<a class="contact-link-card" role="listitem" href="${C.esc(link.href)}"${attributes}><span class="contact-link-icon">${socialTools.iconForPlatform(link.platform)}</span><span><strong>${C.esc(link.label)}</strong><small>${C.esc(socialTools.labelForPlatform(link.platform))}</small></span><b>${external ? 'Открыть ↗' : 'Связаться'}</b></a>`;
+    return `<a class="contact-link-card" href="${C.esc(link.href)}"${attributes}><span class="contact-link-icon">${socialTools.iconForPlatform(link.platform)}</span><span><strong>${C.esc(link.label)}</strong><small>${C.esc(socialTools.labelForPlatform(link.platform))}</small></span><b>${external ? 'Открыть ↗' : 'Связаться'}</b></a>`;
   }).join('');
 }
 
