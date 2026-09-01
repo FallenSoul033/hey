@@ -2,3 +2,7 @@
 	path = .vendor/impeccable
 	url = https://github.com/pbakaus/impeccable.git
 	branch = main
+[submodule ".vendor/emilkowalski-skills"]
+	path = .vendor/emilkowalski-skills
+	url = https://github.com/emilkowalski/skills.git
+	branch = main
