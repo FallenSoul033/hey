@@ -1,4 +1,4 @@
-const CACHE_NAME = 'icefresh-rc1-6-v9';
+const CACHE_NAME = 'icefresh-rc1-6-v10';
 const APP_SHELL = '/';
 // Keep install small: only the shell and control-plane assets are precached.
 // Product/hero/gallery images are cached on first use so mobile users do not
@@ -61,9 +61,14 @@ async function staticResponse(request) {
 
 function isCacheableStatic(pathname) {
   return PRECACHE.includes(pathname)
+    || pathname === '/interactive-video-360.js'
     || pathname.startsWith('/assets/')
     || pathname.startsWith('/premium-3d')
     || pathname === '/icefresh-social.jpg';
+}
+
+function isSeekableMedia(pathname) {
+  return /\.(?:mp4|webm)$/i.test(pathname);
 }
 
 self.addEventListener('fetch', event => {
@@ -71,6 +76,9 @@ self.addEventListener('fetch', event => {
   if (request.method !== 'GET') return;
   const url = new URL(request.url);
   if (url.origin !== self.location.origin || url.pathname.startsWith('/api/')) return;
+  // Leave byte-range video requests to the browser/hosting cache. CacheStorage
+  // can otherwise persist a 206 fragment and break later Safari seeks.
+  if (isSeekableMedia(url.pathname)) return;
   if (request.mode === 'navigate') {
     event.respondWith(navigationResponse(request));
     return;

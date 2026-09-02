@@ -11,7 +11,7 @@ const BUILT_IN_PRODUCT_PHOTOS = {
   '35e74838-68cb-4fb7-9e93-7e30675c48d8': '/assets/products-approved/IceFresh_04_HoReCa_5кг_MASTER.png'
 };
 const BUILT_IN_PRODUCT_DISPLAY_PHOTOS = {
-  cup250: '/assets/products-approved/web/product-01-640.webp',
+  cup250: '/assets/product-360/cup250/cup250-pika-v4-poster.webp',
   bag1: '/assets/products-approved/web/product-02-640.webp',
   bag2: '/assets/products-approved/web/hero-bag-2kg-640.webp',
   '35e74838-68cb-4fb7-9e93-7e30675c48d8': '/assets/products-approved/web/product-04-640.webp'

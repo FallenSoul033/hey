@@ -11,7 +11,7 @@ test('release identifiers are consistent across app, version metadata and servic
   const version = JSON.parse(versionText);
   assert.equal(version.version, '12.0.0-rc.1.6');
   assert.match(app, /APP_VERSION = '12\.0\.0-rc\.1\.6'/);
-  assert.match(sw, /icefresh-rc1-6-v9/);
+  assert.match(sw, /icefresh-rc1-6-v10/);
   assert.equal(version.published, false);
 });
 
@@ -104,5 +104,6 @@ test('PWA caches only explicit static assets and excludes API requests', async (
   const sw = await read('public/sw.js');
   assert.match(sw, /url\.pathname\.startsWith\('\/api\/'\)/);
   assert.match(sw, /PRECACHE\.includes\(pathname\)[\s\S]*pathname\.startsWith\('\/assets\/'\)/);
+  assert.match(sw, /isSeekableMedia\(url\.pathname\)[\s\S]*return/);
   assert.doesNotMatch(sw, /cache\.put\(request[^\n]+api/i);
 });

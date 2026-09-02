@@ -1,0 +1,276 @@
+{
+  "schemaVersion": 1,
+  "task": 64,
+  "source": {
+    "fileName": "pika-ac9f14b1-25be-4233-a0c8-7dd80ea80d00.mp4",
+    "bytes": 292034,
+    "sha256": "D44A5CF5939015D97D01D32A4F108BEC99F80312C0D192E3C8334340E13C8FD7",
+    "classification": "AI_GENERATED_FROM_APPROVED_CUP250_REFERENCES",
+    "codecExpected": "H.264 High / yuv420p",
+    "width": 608,
+    "height": 608,
+    "fps": 30.0,
+    "frames": 151,
+    "duration": 5.033333
+  },
+  "calibration": {
+    "method": "deterministic OpenCV pHash + edges + normalized luminance + HSV histogram + ORB; constrained cyclic monotonic dynamic programming",
+    "matrixShape": [
+      151,
+      24
+    ],
+    "matrixFloat32Sha256": "ECF8761461ACF9EB71559B8829FDD2874405E074E070B110C26DC916C2456DD7",
+    "independentNearestMonotonicViolations": 12,
+    "selectedDirection": "forward",
+    "forwardScore": 6.544885,
+    "reverseScore": 7.638089,
+    "sourceStartFrame": 0,
+    "sourceEndFrame": 146,
+    "anchors": [
+      {
+        "angle": 0,
+        "reference": "frame-01.webp",
+        "sourceFrame": 0,
+        "sourceTime": 0.0,
+        "derivativeFrame": 0,
+        "derivativeTime": 0.0,
+        "matchCost": 0.09176
+      },
+      {
+        "angle": 15,
+        "reference": "frame-02.webp",
+        "sourceFrame": 10,
+        "sourceTime": 0.333333,
+        "derivativeFrame": 10,
+        "derivativeTime": 0.333333,
+        "matchCost": 0.219906
+      },
+      {
+        "angle": 30,
+        "reference": "frame-03.webp",
+        "sourceFrame": 16,
+        "sourceTime": 0.533333,
+        "derivativeFrame": 16,
+        "derivativeTime": 0.533333,
+        "matchCost": 0.241552
+      },
+      {
+        "angle": 45,
+        "reference": "frame-04.webp",
+        "sourceFrame": 24,
+        "sourceTime": 0.8,
+        "derivativeFrame": 24,
+        "derivativeTime": 0.8,
+        "matchCost": 0.214748
+      },
+      {
+        "angle": 60,
+        "reference": "frame-05.webp",
+        "sourceFrame": 34,
+        "sourceTime": 1.133333,
+        "derivativeFrame": 34,
+        "derivativeTime": 1.133333,
+        "matchCost": 0.223451
+      },
+      {
+        "angle": 75,
+        "reference": "frame-06.webp",
+        "sourceFrame": 42,
+        "sourceTime": 1.4,
+        "derivativeFrame": 42,
+        "derivativeTime": 1.4,
+        "matchCost": 0.236703
+      },
+      {
+        "angle": 90,
+        "reference": "frame-07.webp",
+        "sourceFrame": 48,
+        "sourceTime": 1.6,
+        "derivativeFrame": 48,
+        "derivativeTime": 1.6,
+        "matchCost": 0.260947
+      },
+      {
+        "angle": 105,
+        "reference": "frame-08.webp",
+        "sourceFrame": 52,
+        "sourceTime": 1.733333,
+        "derivativeFrame": 52,
+        "derivativeTime": 1.733333,
+        "matchCost": 0.243216
+      },
+      {
+        "angle": 120,
+        "reference": "frame-09.webp",
+        "sourceFrame": 59,
+        "sourceTime": 1.966667,
+        "derivativeFrame": 59,
+        "derivativeTime": 1.966667,
+        "matchCost": 0.240455
+      },
+      {
+        "angle": 135,
+        "reference": "frame-10.webp",
+        "sourceFrame": 61,
+        "sourceTime": 2.033333,
+        "derivativeFrame": 61,
+        "derivativeTime": 2.033333,
+        "matchCost": 0.231873
+      },
+      {
+        "angle": 150,
+        "reference": "frame-11.webp",
+        "sourceFrame": 67,
+        "sourceTime": 2.233333,
+        "derivativeFrame": 67,
+        "derivativeTime": 2.233333,
+        "matchCost": 0.289597
+      },
+      {
+        "angle": 165,
+        "reference": "frame-12.webp",
+        "sourceFrame": 74,
+        "sourceTime": 2.466667,
+        "derivativeFrame": 74,
+        "derivativeTime": 2.466667,
+        "matchCost": 0.259064
+      },
+      {
+        "angle": 180,
+        "reference": "frame-13.webp",
+        "sourceFrame": 79,
+        "sourceTime": 2.633333,
+        "derivativeFrame": 79,
+        "derivativeTime": 2.633333,
+        "matchCost": 0.298221
+      },
+      {
+        "angle": 195,
+        "reference": "frame-14.webp",
+        "sourceFrame": 85,
+        "sourceTime": 2.833333,
+        "derivativeFrame": 85,
+        "derivativeTime": 2.833333,
+        "matchCost": 0.259822
+      },
+      {
+        "angle": 210,
+        "reference": "frame-15.webp",
+        "sourceFrame": 89,
+        "sourceTime": 2.966667,
+        "derivativeFrame": 89,
+        "derivativeTime": 2.966667,
+        "matchCost": 0.242361
+      },
+      {
+        "angle": 225,
+        "reference": "frame-16.webp",
+        "sourceFrame": 93,
+        "sourceTime": 3.1,
+        "derivativeFrame": 93,
+        "derivativeTime": 3.1,
+        "matchCost": 0.311639
+      },
+      {
+        "angle": 240,
+        "reference": "frame-17.webp",
+        "sourceFrame": 99,
+        "sourceTime": 3.3,
+        "derivativeFrame": 99,
+        "derivativeTime": 3.3,
+        "matchCost": 0.264985
+      },
+      {
+        "angle": 255,
+        "reference": "frame-18.webp",
+        "sourceFrame": 100,
+        "sourceTime": 3.333333,
+        "derivativeFrame": 100,
+        "derivativeTime": 3.333333,
+        "matchCost": 0.231793
+      },
+      {
+        "angle": 270,
+        "reference": "frame-19.webp",
+        "sourceFrame": 104,
+        "sourceTime": 3.466667,
+        "derivativeFrame": 104,
+        "derivativeTime": 3.466667,
+        "matchCost": 0.224803
+      },
+      {
+        "angle": 285,
+        "reference": "frame-20.webp",
+        "sourceFrame": 108,
+        "sourceTime": 3.6,
+        "derivativeFrame": 108,
+        "derivativeTime": 3.6,
+        "matchCost": 0.242027
+      },
+      {
+        "angle": 300,
+        "reference": "frame-21.webp",
+        "sourceFrame": 119,
+        "sourceTime": 3.966667,
+        "derivativeFrame": 119,
+        "derivativeTime": 3.966667,
+        "matchCost": 0.249385
+      },
+      {
+        "angle": 315,
+        "reference": "frame-22.webp",
+        "sourceFrame": 125,
+        "sourceTime": 4.166667,
+        "derivativeFrame": 125,
+        "derivativeTime": 4.166667,
+        "matchCost": 0.354219
+      },
+      {
+        "angle": 330,
+        "reference": "frame-23.webp",
+        "sourceFrame": 130,
+        "sourceTime": 4.333333,
+        "derivativeFrame": 130,
+        "derivativeTime": 4.333333,
+        "matchCost": 0.232361
+      },
+      {
+        "angle": 345,
+        "reference": "frame-24.webp",
+        "sourceFrame": 136,
+        "sourceTime": 4.533333,
+        "derivativeFrame": 136,
+        "derivativeTime": 4.533333,
+        "matchCost": 0.237321
+      },
+      {
+        "angle": 360,
+        "reference": "frame-01.webp",
+        "sourceFrame": 146,
+        "sourceTime": 4.866667,
+        "derivativeFrame": 146,
+        "derivativeTime": 4.866667,
+        "matchCost": 0.189152
+      }
+    ]
+  },
+  "seam": {
+    "sourceStartFrame": 0,
+    "sourceEndFrame": 146,
+    "globalSsim": 0.954341,
+    "perceptualHashDistance64": 12,
+    "compositeCost": 0.178357
+  },
+  "drift": {
+    "medianCenter": [
+      304.065,
+      307.376
+    ],
+    "centerOffsetP95Px": 4.27,
+    "centerOffsetMaxPx": 5.124,
+    "medianForegroundHeightPx": 454.0,
+    "heightDriftP95Percent": 0.881,
+    "heightDriftMaxPercent": 1.322,
+    "translationOnlyStabilizationNeeded": false
+  }
+}

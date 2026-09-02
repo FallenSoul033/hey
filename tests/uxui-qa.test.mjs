@@ -47,7 +47,7 @@ test('public 360 and Contacts controls retain native keyboard and assistive sema
   assert.match(html, /<nav id="public-contact-links"[^>]*aria-label="Социальные контакты IceFresh"/);
   assert.match(app, /<a class="contact-link-card" href=/);
   assert.doesNotMatch(app, /<a class="contact-link-card" role="listitem"/);
-  assert.match(serviceWorker, /icefresh-rc1-6-v9/);
+  assert.match(serviceWorker, /icefresh-rc1-6-v10/);
 });
 
 test('public site remains available when the external Supabase SDK CDN fails', () => {

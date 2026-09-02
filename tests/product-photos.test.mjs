@@ -41,7 +41,7 @@ test('approved masters are authoritative and packaged products use contain crop'
 test('public catalogue uses bounded display derivatives while master mapping stays authoritative', async () => {
   const app = await read('public/app.js');
   assert.match(app, /BUILT_IN_PRODUCT_DISPLAY_PHOTOS/);
-  assert.match(app, /product-01-640\.webp/);
+  assert.match(app, /product-360\/cup250\/cup250-pika-v4-poster\.webp/);
   assert.match(app, /product-02-640\.webp/);
   assert.match(app, /hero-bag-2kg-640\.webp/);
   assert.match(app, /product-04-640\.webp/);
@@ -51,6 +51,7 @@ test('public catalogue uses bounded display derivatives while master mapping sta
 
 test('service worker cache revision is bumped for the new storefront assets', async () => {
   const sw = await read('public/sw.js');
-  assert.match(sw, /icefresh-rc1-6-v9/);
+  assert.match(sw, /icefresh-rc1-6-v10/);
+  assert.match(sw, /interactive-video-360\.js/);
   assert.match(sw, /pathname\.startsWith\('\/premium-3d'\)/);
 });

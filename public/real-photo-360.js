@@ -1,4 +1,5 @@
-import { manifestForProduct } from './product-360-config.js';
+import { mountInteractiveVideo360 } from './interactive-video-360.js';
+import { manifestForProduct, videoPocForProduct } from './product-360-config.js';
 
 const MIN_FRAMES = 24;
 const MAX_FRAMES = 36;
@@ -405,7 +406,18 @@ export function mountConfiguredProductViewers(root = document, options = {}) {
     .map(host => {
       const productId = String(host.getAttribute('data-product-360') || '');
       const manifestUrl = manifestForProduct(productId);
-      return manifestUrl ? mountRealPhoto360(host, { ...options, productId, manifestUrl }) : null;
+      if (!manifestUrl) return null;
+      const videoConfig = videoPocForProduct(productId);
+      const frameMount = options.frameMount || mountRealPhoto360;
+      const videoMount = options.videoMount || mountInteractiveVideo360;
+      if (!videoConfig) return frameMount(host, { ...options, productId, manifestUrl });
+      return videoMount(host, {
+        ...options,
+        productId,
+        config: videoConfig,
+        evaluatePolicy: options.evaluatePolicy || evaluateViewerPolicy,
+        fallbackFactory: () => frameMount(host, { ...options, productId, manifestUrl }),
+      });
     })
     .filter(Boolean);
 }
