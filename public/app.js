@@ -2009,7 +2009,8 @@ $('#join-org').onsubmit = async event => {
   await enter(session, true);
 };
 
-$('#nav').onclick = event => {
+$('.brand').onclick = event => { event.preventDefault(); go('dashboard'); };
+  $('#nav').onclick = event => {
   const button = event.target.closest('button');
   if (button) go(button.dataset.section);
 };
@@ -2293,4 +2294,5 @@ window.addEventListener('unhandledrejection', event => showFatalError(event.reas
 window.addEventListener('popstate', applyRoute);
 window.addEventListener('hashchange', applyRoute);
 init();
+
 
