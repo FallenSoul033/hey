@@ -78,7 +78,7 @@ test('slow networks and data saver retain the poster fallback', () => {
 test('only physical packaged products are configured; HoReCa waits for a suitable package', () => {
   assert.deepEqual(Object.keys(PRODUCT_360_MANIFESTS), ['cup250', 'bag1', 'bag2']);
   assert.equal(PRODUCT_360_MANIFESTS['35e74838-68cb-4fb7-9e93-7e30675c48d8'], undefined);
-  assert.deepEqual(Object.keys(PRODUCT_360_VIDEO_POCS), ['cup250']);
+  assert.deepEqual(Object.keys(PRODUCT_360_VIDEO_POCS), ['cup250', 'bag1', 'bag2']);
   assert.equal(PRODUCT_360_VIDEO_POCS.cup250.sourceClassification, 'AI_GENERATED_FROM_APPROVED_CUP250_REFERENCES');
   assert.equal(PRODUCT_360_VIDEO_POCS.cup250.angleTimeMap.length, 25);
 });

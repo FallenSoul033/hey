@@ -93,3 +93,11 @@ textarea{font:inherit}
 @media(max-width:900px){.public-mobile-order,.public-mobile-contact,.public-mobile-home{display:inline-flex;align-items:center;justify-content:center;min-height:42px;padding:8px 11px;border:1px solid #bcdde5;border-radius:10px;background:#fff;color:var(--public-blue);font-size:11px;font-weight:850;text-decoration:none}.public-mobile-order{border-color:var(--public-blue);background:var(--public-blue);color:#fff}}
 @media(max-width:720px){.public-header{gap:7px}.public-header .public-brand{margin-right:auto}.contacts-hero{width:calc(100% - 32px);min-height:calc(100vh - 160px);padding:60px 0 78px}.contacts-copy h1{font-size:44px}.contacts-copy>p:last-child{font-size:15px}.contact-link-card{padding:18px}.product-360-hint{right:9px;bottom:9px}}
 @media(prefers-reduced-motion:reduce){.product-360-video,.product-media.is-video-360-ready>img{transition:none}}
+.hero-360-container { position: relative; width: 100%; height: 100%; }
+.hero-360-container .product-media { position: absolute; inset: 0; margin: 0; border-radius: 0; background: transparent; height: 100%; }
+.hero-360-container .product-media[hidden] { display: none !important; }
+.hero-360-container .product-media img { width: 100%; height: 100%; object-fit: contain; object-position: center; background: #f8fdff; }
+.hero-product-selector { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+.hero-product-selector button { flex: 1; padding: 6px 10px; border: 1px solid #ffffff55; border-radius: 8px; background: rgba(0, 0, 0, 0.2); color: #fff; font-size: 11px; font-weight: 800; cursor: pointer; transition: 0.2s; white-space: nowrap; }
+.hero-product-selector button:hover { background: rgba(0, 0, 0, 0.4); }
+.hero-product-selector button.active { background: #fff; color: var(--public-navy); border-color: #fff; }

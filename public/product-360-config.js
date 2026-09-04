@@ -14,6 +14,26 @@ export const CUP250_PIKA_V4_ANGLE_TIME_MAP = Object.freeze([
   [360, 4.866667],
 ].map(anchor => Object.freeze(anchor)));
 
+export const BAG1_ANGLE_TIME_MAP = Object.freeze([
+  [0, 0.0], [15, 0.2], [30, 0.4], [45, 0.633333],
+  [60, 0.8], [75, 0.966667], [90, 1.333333], [105, 1.533333],
+  [120, 1.933333], [135, 2.2], [150, 2.233333], [165, 2.4],
+  [180, 2.6], [195, 2.8], [210, 3.166667], [225, 3.266667],
+  [240, 3.366667], [255, 3.4], [270, 3.5], [285, 3.566667],
+  [300, 3.766667], [315, 3.966667], [330, 4.133333], [345, 4.666667],
+  [360, 4.9]
+].map(anchor => Object.freeze(anchor)));
+
+export const BAG2_ANGLE_TIME_MAP = Object.freeze([
+  [0, 0.0], [15, 0.25], [30, 0.5], [45, 0.75],
+  [60, 1.0], [75, 1.25], [90, 1.5], [105, 1.75],
+  [120, 2.0], [135, 2.25], [150, 2.5], [165, 2.75],
+  [180, 3.0], [195, 3.25], [210, 3.5], [225, 3.75],
+  [240, 4.0], [255, 4.25], [270, 4.5], [285, 4.75],
+  [300, 5.0], [315, 5.25], [330, 5.5], [345, 5.75],
+  [360, 6.0]
+].map(anchor => Object.freeze(anchor)));
+
 export const PRODUCT_360_VIDEO_POCS = Object.freeze({
   cup250: Object.freeze({
     enabled: true,
@@ -45,6 +65,30 @@ export const PRODUCT_360_VIDEO_POCS = Object.freeze({
       seamGlobalSsim: 0.954341,
     }),
   }),
+  bag1: Object.freeze({
+    enabled: true,
+    productId: 'bag1',
+    poster: '/assets/product-360/bag1/bag1-poster.webp',
+    src: '/assets/product-360/bag1/bag1-derivative.mp4',
+    type: 'video/mp4',
+    frameCount: 148,
+    fps: 30,
+    angleStep: 15,
+    angleTimeMap: BAG1_ANGLE_TIME_MAP,
+    sourceClassification: 'AI_GENERATED_FROM_APPROVED_ICEFRESH_REFERENCES_CONSERVATIVE_LOCAL_DERIVATIVE'
+  }),
+  bag2: Object.freeze({
+    enabled: true,
+    productId: 'bag2',
+    poster: '/assets/product-360/bag2/bag2-approved24-poster.webp',
+    src: '/assets/product-360/bag2/bag2-approved24-minterpolate-60fps-gop6.mp4',
+    type: 'video/mp4',
+    frameCount: 360,
+    fps: 60,
+    angleStep: 15,
+    angleTimeMap: BAG2_ANGLE_TIME_MAP,
+    sourceClassification: 'FFMPEG_MINTERPOLATE_FROM_APPROVED_REFERENCES'
+  })
 });
 
 export function manifestForProduct(productId) {

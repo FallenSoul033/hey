@@ -365,7 +365,7 @@ function destroyProduct360Enhancements() {
 }
 
 function setupProduct360Enhancements() {
-  const root = $('#public-catalog');
+  const root = document.body;
   if (!root?.querySelector('[data-product-360]')) return;
   product360ModulePromise ||= import('/real-photo-360.js');
   product360ModulePromise
@@ -495,6 +495,24 @@ function resetIdentity() {
   data = emptyData();
 }
 
+function setupHeroSelector() {
+  const buttons = document.querySelectorAll('[data-hero-select]');
+  const medias = document.querySelectorAll('.hero-360-container .product-media');
+  buttons.forEach(button => {
+    button.addEventListener('click', () => {
+      const targetId = button.getAttribute('data-hero-select');
+      buttons.forEach(btn => btn.classList.toggle('active', btn === button));
+      medias.forEach(media => {
+        if (media.getAttribute('data-product-360') === targetId) {
+          media.hidden = false;
+        } else {
+          media.hidden = true;
+        }
+      });
+    });
+  });
+}
+
 async function init() {
   const startPwa = () => setupPwa();
   if ('requestIdleCallback' in window) window.requestIdleCallback(startPwa, { timeout: 2500 });
@@ -505,6 +523,7 @@ async function init() {
   $('#logo').src = $('#auth-logo').src = document.querySelector('.onboarding-logo').src = logoUrl;
   document.querySelectorAll('.public-logo').forEach(element => { element.src = logoUrl; });
   $('#public-order-form [name=started_at]').value = String(Date.now());
+  setupHeroSelector();
   setupPremium3DEnhancement();
   try { socialTools = await import('/social-links.js'); } catch { socialTools = null; }
   renderPublicContacts();
