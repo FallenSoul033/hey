@@ -391,6 +391,9 @@ function showOnly(target, publicRoute = 'home') {
   $('#public-contacts').hidden = target !== 'public' || publicRoute !== 'contacts';
   $('#auth-screen').hidden = target !== 'auth';
   $('#onboarding').hidden = target !== 'onboarding';
+    $('#sidebar').hidden = target !== 'app';
+    $('#admin-main').hidden = target !== 'app';
+    $('#mobile-bottom-nav').hidden = target !== 'app';
   document.body.classList.toggle('app-ready', target === 'app');
   document.body.classList.toggle('public-ready', target === 'public');
   $('#global-search-results').hidden = true;
@@ -2290,3 +2293,4 @@ window.addEventListener('unhandledrejection', event => showFatalError(event.reas
 window.addEventListener('popstate', applyRoute);
 window.addEventListener('hashchange', applyRoute);
 init();
+
